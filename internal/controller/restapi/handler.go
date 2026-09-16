@@ -15,12 +15,18 @@ import (
 type Handler struct {
 	user       service.UserService
 	jwtService *service.JWTService
+	health     HealthChecker
 }
 
-func NewHandler(user service.UserService, jwtService *service.JWTService) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService}
+type HealthChecker interface {
+	Ping(ctx context.Context) error
+}
+
+func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker) http.Handler {
+	h := &Handler{user: user, jwtService: jwtService, health: health}
 	r := chi.NewRouter()
 
+	r.Get("/health", h.healthHandler)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", h.registerHandler)
@@ -33,6 +39,16 @@ func NewHandler(user service.UserService, jwtService *service.JWTService) http.H
 	})
 
 	return r
+}
+
+func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
+	if err := h.health.Ping(r.Context()); err != nil {
+		log.Printf("health check failed: %v", err)
+		WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "database unavailable")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,9 +64,7 @@ func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := make(map[string]string, 1)
-	res["token"] = token
-	WriteJSON(w, http.StatusCreated, res)
+	WriteJSON(w, http.StatusCreated, NewTokenResponse(token))
 }
 
 func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +80,19 @@ func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := make(map[string]string, 1)
-	res["token"] = token
-	WriteJSON(w, http.StatusOK, res)
+	WriteJSON(w, http.StatusOK, NewTokenResponse(token))
+}
+
+func NewTokenResponse(token string) tokenResponse {
+	return tokenResponse{
+		AccessToken: token,
+		TokenType:   "Bearer",
+	}
+}
+
+type tokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
 }
 
 func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {

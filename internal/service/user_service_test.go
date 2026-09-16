@@ -61,7 +61,7 @@ func TestUserServiceRegister(t *testing.T) {
 	svc := newTestUserService(repo)
 
 	token, err := svc.Register(context.Background(), model.CreateUserRequest{
-		Username: "Alice",
+		Username: " Alice ",
 		Password: "verysecret",
 	})
 	if err != nil {
@@ -77,6 +77,31 @@ func TestUserServiceRegister(t *testing.T) {
 	}
 	if !checkPasswordHash("verysecret", user.PasswordHash) {
 		t.Fatal("stored password hash does not match the password")
+	}
+}
+
+func TestUserServiceRegisterRejectsInvalidUsernames(t *testing.T) {
+	tests := []string{
+		"   ",
+		"ab",
+		"hello world",
+		"!!!!",
+		"abcdefghijklmnopqrstuvwxyzabcdefg",
+	}
+
+	for _, username := range tests {
+		t.Run(username, func(t *testing.T) {
+			repo := newFakeUserRepository()
+			svc := newTestUserService(repo)
+
+			_, err := svc.Register(context.Background(), model.CreateUserRequest{
+				Username: username,
+				Password: "verysecret",
+			})
+			if !errors.Is(err, ErrInvalidUsername) {
+				t.Fatalf("Register error = %v, want %v", err, ErrInvalidUsername)
+			}
+		})
 	}
 }
 

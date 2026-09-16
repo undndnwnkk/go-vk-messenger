@@ -30,6 +30,24 @@ func TestLoadRejectsInvalidJWTTTL(t *testing.T) {
 	}
 }
 
+func TestLoadUsesHTTPPortAsPort(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_TTL", "15")
+	t.Setenv("HTTP_PORT", "8080")
+	chdirTemp(t)
+
+	conf := NewConfig()
+	if err := conf.Load(); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if conf.HTTPConfig.Port != "8080" {
+		t.Fatalf("HTTP port = %q, want %q", conf.HTTPConfig.Port, "8080")
+	}
+	if conf.HTTPAddr() != ":8080" {
+		t.Fatalf("HTTP addr = %q, want %q", conf.HTTPAddr(), ":8080")
+	}
+}
+
 func TestParseJWTTTL(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -7,8 +7,11 @@ import (
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
 	"golang.org/x/crypto/bcrypt"
+	"regexp"
 	"strings"
 )
+
+var usernamePattern = regexp.MustCompile(`^[a-z0-9_]{3,32}$`)
 
 type UserRepositoryInterface interface {
 	Create(ctx context.Context, user model.User) (string, error)
@@ -26,12 +29,11 @@ func NewUserService(repo UserRepositoryInterface, jwtService *JWTService) *UserS
 }
 
 func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest) (string, error) {
-	// request validation
-	if len(req.Username) < 1 || len(req.Username) > 100 {
+	username := normalizeUsername(req.Username)
+	if !validUsername(username) {
 		return "", ErrInvalidUsername
 	}
 
-	username := strings.ToLower(req.Username)
 	if len([]byte(req.Password)) < 8 {
 		return "", ErrShortPassword
 	}
@@ -61,7 +63,7 @@ func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest)
 }
 
 func (s *UserService) Login(ctx context.Context, req model.CreateUserRequest) (string, error) {
-	user, err := s.repo.GetByUsername(ctx, strings.ToLower(req.Username))
+	user, err := s.repo.GetByUsername(ctx, normalizeUsername(req.Username))
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
 			return "", ErrInvalidCredentials
@@ -79,6 +81,14 @@ func (s *UserService) Login(ctx context.Context, req model.CreateUserRequest) (s
 	}
 
 	return token, nil
+}
+
+func normalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func validUsername(username string) bool {
+	return usernamePattern.MatchString(username)
 }
 
 func (s *UserService) Me(ctx context.Context, id string) (*model.User, error) {

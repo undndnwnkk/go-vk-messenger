@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -21,6 +22,14 @@ type fakeUserRepo struct {
 	usersByID       map[string]model.User
 	usersByUsername map[string]model.User
 	nextID          int
+}
+
+type fakeHealthChecker struct {
+	err error
+}
+
+func (h fakeHealthChecker) Ping(_ context.Context) error {
+	return h.err
 }
 
 func newFakeUserRepo() *fakeUserRepo {
@@ -64,7 +73,7 @@ func newTestHandler(t *testing.T, repo *fakeUserRepo) (http.Handler, *service.JW
 
 	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
 	userService := service.NewUserService(repo, jwtService)
-	return NewHandler(*userService, jwtService), jwtService
+	return NewHandler(*userService, jwtService, fakeHealthChecker{}), jwtService
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -94,12 +103,16 @@ func TestRegisterHandler(t *testing.T) {
 	}
 
 	var registerResponse struct {
-		Token string `json:"token"`
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&registerResponse); err != nil {
 		t.Fatalf("decode register response: %v", err)
 	}
-	if _, err := jwtService.ValidateToken(registerResponse.Token); err != nil {
+	if registerResponse.TokenType != "Bearer" {
+		t.Fatalf("token_type = %q, want %q", registerResponse.TokenType, "Bearer")
+	}
+	if _, err := jwtService.ValidateToken(registerResponse.AccessToken); err != nil {
 		t.Fatalf("register returned invalid token: %v", err)
 	}
 
@@ -126,12 +139,16 @@ func TestLoginHandler(t *testing.T) {
 		t.Fatalf("login status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	var loginResponse struct {
-		Token string `json:"token"`
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&loginResponse); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
-	if _, err := jwtService.ValidateToken(loginResponse.Token); err != nil {
+	if loginResponse.TokenType != "Bearer" {
+		t.Fatalf("token_type = %q, want %q", loginResponse.TokenType, "Bearer")
+	}
+	if _, err := jwtService.ValidateToken(loginResponse.AccessToken); err != nil {
 		t.Fatalf("login returned invalid token: %v", err)
 	}
 
@@ -142,6 +159,28 @@ func TestLoginHandler(t *testing.T) {
 	}
 	if wrongPassword.Body.String() != wrongUsername.Body.String() {
 		t.Fatalf("invalid login responses differ: %q vs %q", wrongPassword.Body.String(), wrongUsername.Body.String())
+	}
+}
+
+func TestHealthHandler(t *testing.T) {
+	repo := newFakeUserRepo()
+	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
+	userService := service.NewUserService(repo, jwtService)
+	handler := NewHandler(*userService, jwtService, fakeHealthChecker{})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	handler = NewHandler(*userService, jwtService, fakeHealthChecker{err: errors.New("database down")})
+	req = httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("health unavailable status = %d, want %d; body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
 	}
 }
 

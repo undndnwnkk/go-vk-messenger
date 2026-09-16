@@ -17,7 +17,7 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	Addr string
+	Port string
 }
 
 type PostgresConfig struct {
@@ -43,7 +43,7 @@ func (c *Config) Load() error {
 		log.Println("warn: .env not found")
 	}
 
-	httpConf := HTTPConfig{Addr: getEnv("HTTP_PORT", ":8080")}
+	httpConf := HTTPConfig{Port: getEnv("HTTP_PORT", "8080")}
 	postgresConf := PostgresConfig{
 		User:     getEnv("DB_USER", "postgres"),
 		Password: getEnv("DB_PASSWORD", "postgres"),
@@ -90,6 +90,10 @@ func (c *Config) BuildDSN() string {
 		c.PostgresConfig.DBName,
 		c.PostgresConfig.SSLMode,
 	)
+}
+
+func (c *Config) HTTPAddr() string {
+	return ":" + c.HTTPConfig.Port
 }
 
 func parseJWTTTL(value string) (time.Duration, error) {
