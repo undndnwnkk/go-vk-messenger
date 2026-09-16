@@ -40,21 +40,44 @@ func main() {
 		Handler: handler,
 	}
 
+	serverErr := make(chan error, 1)
+
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal("error starting server: " + err.Error())
+		log.Printf("http server started on %s", server.Addr)
+
+		err := server.ListenAndServe()
+
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
 		}
+
+		serverErr <- nil
 	}()
-	log.Println("server started at port: " + server.Addr)
 
-	<-ctx.Done()
-	log.Println("server shutting down")
+	select {
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	case err := <-serverErr:
+		if err != nil {
+			log.Printf("http server failed: %v", err)
+			return
+		}
+
+		log.Println("http server stopped")
+		return
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		log.Printf("http server shutdown failed: %v", err)
+		return
 	}
 
 	log.Println("http server stopped")
