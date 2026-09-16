@@ -1,4 +1,4 @@
-package handler
+package restapi
 
 import (
 	"encoding/json"
@@ -23,8 +23,8 @@ func NewHandler(pool *pgxpool.Pool) http.Handler {
 func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := make(map[string]string, 1)
 	if err := h.pool.Ping(r.Context()); err != nil {
-		resp["status"] = "unvailable"
-		writeJSON(w, 500, resp)
+		resp["status"] = "unavailable"
+		writeJSON(w, 503, resp)
 	} else {
 		resp["status"] = "ok"
 		writeJSON(w, 200, resp)
