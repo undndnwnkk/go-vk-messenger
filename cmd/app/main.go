@@ -6,6 +6,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/undndnwnkk/go-vk-messenger/internal/config"
 	"github.com/undndnwnkk/go-vk-messenger/internal/controller/restapi"
+	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
+	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"log"
 	"net/http"
 	"os/signal"
@@ -34,7 +36,11 @@ func main() {
 
 	log.Println("pgxpool created")
 
-	handler := restapi.NewHandler(pgxPool)
+	userRepo := repository.NewUserRepository(pgxPool)
+	jwtService := service.NewJwtService()
+	userService := service.NewUserService(userRepo, *jwtService)
+
+	handler := restapi.NewHandler(*userService)
 	server := http.Server{
 		Addr:    config.HTTPConfig.Addr,
 		Handler: handler,

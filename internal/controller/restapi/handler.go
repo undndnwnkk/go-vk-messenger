@@ -1,38 +1,132 @@
 package restapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"net/http"
 )
 
 type Handler struct {
-	pool *pgxpool.Pool
+	user service.UserService
 }
 
-func NewHandler(pool *pgxpool.Pool) http.Handler {
-	h := &Handler{pool: pool}
+func NewHandler(user service.UserService) http.Handler {
+	h := &Handler{user: user}
 	r := chi.NewRouter()
 
-	r.Get("/health", h.healthHandler)
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Post("/register", h.registerHandler)
+		r.Post("/login", h.loginHandler)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(JWTMiddleware)
+		r.Get("/me", h.meHandler)
+	})
 
 	return r
 }
 
-func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
-	resp := make(map[string]string, 1)
-	if err := h.pool.Ping(r.Context()); err != nil {
-		resp["status"] = "unavailable"
-		writeJSON(w, 503, resp)
-	} else {
-		resp["status"] = "ok"
-		writeJSON(w, 200, resp)
+func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_request", "invalid arguments: "+err.Error())
+		return
 	}
+
+	token, err := h.user.Register(r.Context(), req)
+	if err != nil {
+		status, code := errorListener(err)
+		WriteError(w, status, code, err.Error())
+		return
+	}
+
+	res := make(map[string]string, 1)
+	res["token"] = token
+	WriteJSON(w, http.StatusCreated, res)
 }
 
-func writeJSON(w http.ResponseWriter, status int, data any) {
+func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+
+	token, err := h.user.Login(r.Context(), req)
+	if err != nil {
+		status, code := errorListener(err)
+		WriteError(w, status, code, err.Error())
+		return
+	}
+
+	res := make(map[string]string, 1)
+	res["token"] = token
+	WriteJSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
+		return
+	}
+	user, err := h.user.Me(r.Context(), userID)
+	if err != nil {
+		status, code := errorListener(err)
+		WriteError(w, status, code, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, user)
+}
+
+func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(&data)
+}
+
+func WriteError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	res := struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}{}
+
+	res.Error.Code = code
+	res.Error.Message = message
+
+	_ = json.NewEncoder(w).Encode(&res)
+}
+
+func getUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
+}
+
+func errorListener(err error) (int, string) {
+	if errors.Is(err, service.ErrInvalidUsername) || errors.Is(err, service.ErrUserNotFound) {
+		return http.StatusBadRequest, "invalid_username"
+	}
+
+	if errors.Is(err, service.ErrUserAlreadyExists) {
+		return http.StatusConflict, "user_exists"
+	}
+
+	if errors.Is(err, service.ErrShortPassword) {
+		return http.StatusBadRequest, "short_password"
+	}
+
+	if errors.Is(err, service.ErrIncorrectPassword) {
+		return http.StatusUnauthorized, "invalid_credentials"
+	}
+
+	return http.StatusInternalServerError, "internal_server_error"
 }
