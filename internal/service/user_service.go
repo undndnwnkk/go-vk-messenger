@@ -68,7 +68,7 @@ func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest)
 }
 
 func (s *UserService) Login(ctx context.Context, req model.CreateUserRequest) (string, error) {
-	user, err := s.repo.GetByUsername(ctx, req.Username)
+	user, err := s.repo.GetByUsername(ctx, strings.ToLower(req.Username))
 	if err != nil {
 		return "", repoErrHandler(err)
 	}

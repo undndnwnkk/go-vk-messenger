@@ -2,8 +2,6 @@ package restapi
 
 import (
 	"context"
-	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"net/http"
 	"strings"
@@ -30,15 +28,8 @@ func JWTMiddleware(next http.Handler) http.Handler {
 		}
 		tokenString := parts[1]
 
-		claims := &service.Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return jwtS.Secret, nil
-		})
-
-		if err != nil || !token.Valid {
+		claims, err := jwtS.ValidateToken(tokenString)
+		if err != nil {
 			WriteError(w, http.StatusUnauthorized, "invalid_token", "invalid or expired token")
 			return
 		}

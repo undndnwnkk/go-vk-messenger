@@ -8,6 +8,7 @@ import (
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"net/http"
+	"time"
 )
 
 type Handler struct {
@@ -58,6 +59,10 @@ func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.user.Login(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrIncorrectPassword) {
+			WriteError(w, http.StatusUnauthorized, "invalid_credentials", service.ErrIncorrectPassword.Error())
+			return
+		}
 		status, code := errorListener(err)
 		WriteError(w, status, code, err.Error())
 		return
@@ -81,7 +86,17 @@ func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, user)
+	res := struct {
+		ID        string    `json:"id"`
+		Username  string    `json:"username"`
+		CreatedAt time.Time `json:"created_at"`
+	}{
+		ID:        user.ID,
+		Username:  user.Username,
+		CreatedAt: user.CreatedAt,
+	}
+
+	WriteJSON(w, http.StatusOK, res)
 }
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {

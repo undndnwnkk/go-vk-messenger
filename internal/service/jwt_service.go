@@ -14,7 +14,7 @@ type JwtService struct {
 }
 
 type Claims struct {
-	UserID string
+	UserID string `json:"-"`
 	jwt.RegisteredClaims
 }
 
@@ -38,6 +38,7 @@ func (s *JwtService) GenerateToken(userID string) (string, error) {
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(exp),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
@@ -66,6 +67,12 @@ func (s *JwtService) ValidateToken(tokenString string) (*Claims, error) {
 	}
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		if claims.UserID == "" {
+			claims.UserID = claims.Subject
+		}
+		if claims.UserID == "" {
+			return nil, ErrInvalidToken
+		}
 		return claims, nil
 	}
 
