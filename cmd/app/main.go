@@ -6,6 +6,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/undndnwnkk/go-vk-messenger/internal/config"
 	"github.com/undndnwnkk/go-vk-messenger/internal/controller/restapi"
+	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
+	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"log"
 	"net/http"
 	"os/signal"
@@ -17,7 +19,9 @@ func main() {
 	log.Println("application starting")
 
 	config := config.NewConfig()
-	config.Load()
+	if err := config.Load(); err != nil {
+		log.Fatal("error loading config: " + err.Error())
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -27,6 +31,10 @@ func main() {
 	if err != nil {
 		log.Fatal("error connecting to database: " + err.Error())
 	}
+	defer func() {
+		pgxPool.Close()
+		log.Println("postgres connection closed")
+	}()
 
 	if err := pgxPool.Ping(ctx); err != nil {
 		log.Fatal("error ping to database: " + err.Error())
@@ -34,9 +42,13 @@ func main() {
 
 	log.Println("pgxpool created")
 
-	handler := restapi.NewHandler(pgxPool)
+	userRepo := repository.NewUserRepository(pgxPool)
+	jwtService := service.NewJWTService(config.JWTConfig.Secret, config.JWTConfig.TTL)
+	userService := service.NewUserService(userRepo, jwtService)
+
+	handler := restapi.NewHandler(*userService, jwtService, pgxPool)
 	server := http.Server{
-		Addr:    config.HTTPConfig.Addr,
+		Addr:    config.HTTPAddr(),
 		Handler: handler,
 	}
 
@@ -79,8 +91,4 @@ func main() {
 		log.Printf("http server shutdown failed: %v", err)
 		return
 	}
-
-	log.Println("http server stopped")
-	pgxPool.Close()
-	log.Println("postgres connection closed")
 }

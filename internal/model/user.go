@@ -10,3 +10,8 @@ type User struct {
 	PasswordHash string    `db:"password_hash"`
 	CreatedAt    time.Time `db:"created_at"`
 }
+
+type CreateUserRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
