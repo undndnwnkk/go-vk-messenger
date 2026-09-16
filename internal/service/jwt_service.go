@@ -3,14 +3,12 @@ package service
 import (
 	"errors"
 	"github.com/golang-jwt/jwt/v5"
-	"os"
-	"strconv"
 	"time"
 )
 
-type JwtService struct {
+type JWTService struct {
 	Secret    []byte
-	accessTTL int
+	accessTTL time.Duration
 }
 
 type Claims struct {
@@ -18,29 +16,19 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func NewJwtService() *JwtService {
-	key := os.Getenv("JWT_SECRET")
-	if key == "" {
-		key = "supersecretforjwtnothanks"
-	}
-	ttl := os.Getenv("JWT_TTL")
-	var ttlInt int
-	if ttl == "" {
-		ttlInt = 15
-	} else {
-		ttlInt, _ = strconv.Atoi(ttl)
-	}
-	return &JwtService{Secret: []byte(key), accessTTL: ttlInt}
+func NewJWTService(secret string, ttl time.Duration) *JWTService {
+	return &JWTService{Secret: []byte(secret), accessTTL: ttl}
 }
 
-func (s *JwtService) GenerateToken(userID string) (string, error) {
-	exp := time.Now().Add(time.Duration(s.accessTTL) * time.Minute)
+func (s *JWTService) GenerateToken(userID string) (string, error) {
+	now := time.Now()
+	exp := now.Add(s.accessTTL)
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(exp),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
 
@@ -54,13 +42,13 @@ func (s *JwtService) GenerateToken(userID string) (string, error) {
 	return tokenString, nil
 }
 
-func (s *JwtService) ValidateToken(tokenString string) (*Claims, error) {
+func (s *JWTService) ValidateToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, ErrUnknownSigningMethod
 		}
 		return s.Secret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 
 	if err != nil {
 		return nil, ErrJwt
@@ -79,7 +67,7 @@ func (s *JwtService) ValidateToken(tokenString string) (*Claims, error) {
 	return nil, ErrInvalidToken
 }
 
-func (s *JwtService) GetUserID(tokenString string) (string, error) {
+func (s *JWTService) GetUserID(tokenString string) (string, error) {
 	claims, err := s.ValidateToken(tokenString)
 	if err != nil {
 		return "", err

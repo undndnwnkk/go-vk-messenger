@@ -3,15 +3,13 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestJWTContainsRegisteredClaims(t *testing.T) {
-	svc := JwtService{
-		Secret:    []byte("test-secret"),
-		accessTTL: 15,
-	}
+	svc := NewJWTService("test-secret", 15*time.Minute)
 
 	tokenString, err := svc.GenerateToken("user-1")
 	if err != nil {
@@ -40,10 +38,7 @@ func TestJWTContainsRegisteredClaims(t *testing.T) {
 }
 
 func TestJWTRejectsExpiredAndTamperedToken(t *testing.T) {
-	svc := JwtService{
-		Secret:    []byte("test-secret"),
-		accessTTL: -1,
-	}
+	svc := NewJWTService("test-secret", -time.Minute)
 
 	expiredToken, err := svc.GenerateToken("user-1")
 	if err != nil {
@@ -53,15 +48,31 @@ func TestJWTRejectsExpiredAndTamperedToken(t *testing.T) {
 		t.Fatalf("expired token error = %v, want %v", err, ErrJwt)
 	}
 
-	validSvc := JwtService{
-		Secret:    []byte("test-secret"),
-		accessTTL: 15,
-	}
+	validSvc := NewJWTService("test-secret", 15*time.Minute)
 	validToken, err := validSvc.GenerateToken("user-1")
 	if err != nil {
 		t.Fatalf("GenerateToken returned error: %v", err)
 	}
 	if _, err := validSvc.ValidateToken(validToken + "tampered"); !errors.Is(err, ErrJwt) {
 		t.Fatalf("tampered token error = %v, want %v", err, ErrJwt)
+	}
+}
+
+func TestJWTRejectsUnexpectedSigningMethod(t *testing.T) {
+	svc := NewJWTService("test-secret", 15*time.Minute)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS384, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "user-1",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	})
+	tokenString, err := token.SignedString(svc.Secret)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	if _, err := svc.ValidateToken(tokenString); !errors.Is(err, ErrJwt) {
+		t.Fatalf("unexpected signing method error = %v, want %v", err, ErrJwt)
 	}
 }

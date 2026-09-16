@@ -19,7 +19,9 @@ func main() {
 	log.Println("application starting")
 
 	config := config.NewConfig()
-	config.Load()
+	if err := config.Load(); err != nil {
+		log.Fatal("error loading config: " + err.Error())
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -29,6 +31,10 @@ func main() {
 	if err != nil {
 		log.Fatal("error connecting to database: " + err.Error())
 	}
+	defer func() {
+		pgxPool.Close()
+		log.Println("postgres connection closed")
+	}()
 
 	if err := pgxPool.Ping(ctx); err != nil {
 		log.Fatal("error ping to database: " + err.Error())
@@ -37,10 +43,10 @@ func main() {
 	log.Println("pgxpool created")
 
 	userRepo := repository.NewUserRepository(pgxPool)
-	jwtService := service.NewJwtService()
-	userService := service.NewUserService(userRepo, *jwtService)
+	jwtService := service.NewJWTService(config.JWTConfig.Secret, config.JWTConfig.TTL)
+	userService := service.NewUserService(userRepo, jwtService)
 
-	handler := restapi.NewHandler(*userService)
+	handler := restapi.NewHandler(*userService, jwtService)
 	server := http.Server{
 		Addr:    config.HTTPConfig.Addr,
 		Handler: handler,
@@ -85,8 +91,4 @@ func main() {
 		log.Printf("http server shutdown failed: %v", err)
 		return
 	}
-
-	log.Println("http server stopped")
-	pgxPool.Close()
-	log.Println("postgres connection closed")
 }

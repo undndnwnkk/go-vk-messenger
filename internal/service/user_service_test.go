@@ -53,10 +53,7 @@ func (r *fakeUserRepository) GetByID(_ context.Context, id string) (*model.User,
 }
 
 func newTestUserService(repo *fakeUserRepository) *UserService {
-	return NewUserService(repo, JwtService{
-		Secret:    []byte("test-secret"),
-		accessTTL: 15,
-	})
+	return NewUserService(repo, NewJWTService("test-secret", 15*time.Minute))
 }
 
 func TestUserServiceRegister(t *testing.T) {
@@ -122,10 +119,10 @@ func TestUserServiceLoginInvalidCredentials(t *testing.T) {
 		t.Fatalf("Register returned error: %v", err)
 	}
 
-	if _, err := svc.Login(context.Background(), model.CreateUserRequest{Username: "alice", Password: "wrongpassword"}); !errors.Is(err, ErrIncorrectPassword) {
-		t.Fatalf("wrong password error = %v, want %v", err, ErrIncorrectPassword)
+	if _, err := svc.Login(context.Background(), model.CreateUserRequest{Username: "alice", Password: "wrongpassword"}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("wrong password error = %v, want %v", err, ErrInvalidCredentials)
 	}
-	if _, err := svc.Login(context.Background(), model.CreateUserRequest{Username: "missing", Password: "verysecret"}); !errors.Is(err, ErrUserNotFound) {
-		t.Fatalf("wrong username error = %v, want %v", err, ErrUserNotFound)
+	if _, err := svc.Login(context.Background(), model.CreateUserRequest{Username: "missing", Password: "verysecret"}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("wrong username error = %v, want %v", err, ErrInvalidCredentials)
 	}
 }

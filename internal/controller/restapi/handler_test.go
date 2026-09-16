@@ -59,14 +59,12 @@ func (r *fakeUserRepo) GetByID(_ context.Context, id string) (*model.User, error
 	return &user, nil
 }
 
-func newTestHandler(t *testing.T, repo *fakeUserRepo) (http.Handler, *service.JwtService) {
+func newTestHandler(t *testing.T, repo *fakeUserRepo) (http.Handler, *service.JWTService) {
 	t.Helper()
-	t.Setenv("JWT_SECRET", "test-secret")
-	t.Setenv("JWT_TTL", "15")
 
-	jwtService := service.NewJwtService()
-	userService := service.NewUserService(repo, *jwtService)
-	return NewHandler(*userService), jwtService
+	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
+	userService := service.NewUserService(repo, jwtService)
+	return NewHandler(*userService, jwtService), jwtService
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -159,14 +157,14 @@ func TestMeHandlerAndJWTMiddleware(t *testing.T) {
 		t.Fatalf("generate token: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("me without token status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/me", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -190,7 +188,7 @@ func TestMeHandlerAndJWTMiddleware(t *testing.T) {
 		t.Fatalf("sign expired token: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/me", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	req.Header.Set("Authorization", "Bearer "+expiredTokenString)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -198,7 +196,7 @@ func TestMeHandlerAndJWTMiddleware(t *testing.T) {
 		t.Fatalf("me with expired token status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/me", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token+"tampered")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

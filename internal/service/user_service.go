@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
@@ -19,10 +18,10 @@ type UserRepositoryInterface interface {
 
 type UserService struct {
 	repo       UserRepositoryInterface
-	jwtService JwtService
+	jwtService *JWTService
 }
 
-func NewUserService(repo UserRepositoryInterface, jwtService JwtService) *UserService {
+func NewUserService(repo UserRepositoryInterface, jwtService *JWTService) *UserService {
 	return &UserService{repo: repo, jwtService: jwtService}
 }
 
@@ -33,17 +32,11 @@ func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest)
 	}
 
 	username := strings.ToLower(req.Username)
-	existUser, err := s.repo.GetByUsername(ctx, username)
-	if err != nil && !errors.Is(err, repository.ErrUserNotFound) {
-		return "", fmt.Errorf("create user: %w", err)
-	}
-
-	if existUser != nil {
-		return "", ErrUserAlreadyExists
-	}
-
-	if len(req.Password) < 8 {
+	if len([]byte(req.Password)) < 8 {
 		return "", ErrShortPassword
+	}
+	if len([]byte(req.Password)) > 72 {
+		return "", ErrLongPassword
 	}
 
 	// password hashing
@@ -70,11 +63,14 @@ func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest)
 func (s *UserService) Login(ctx context.Context, req model.CreateUserRequest) (string, error) {
 	user, err := s.repo.GetByUsername(ctx, strings.ToLower(req.Username))
 	if err != nil {
-		return "", repoErrHandler(err)
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return "", ErrInvalidCredentials
+		}
+		return "", fmt.Errorf("get user by username: %w", err)
 	}
 
 	if !checkPasswordHash(req.Password, user.PasswordHash) {
-		return "", ErrIncorrectPassword
+		return "", ErrInvalidCredentials
 	}
 
 	token, err := s.jwtService.GenerateToken(user.ID)
@@ -87,32 +83,27 @@ func (s *UserService) Login(ctx context.Context, req model.CreateUserRequest) (s
 
 func (s *UserService) Me(ctx context.Context, id string) (*model.User, error) {
 	user, err := s.repo.GetByID(ctx, id)
-	if err != nil || user == nil {
+	if err != nil {
 		return nil, repoErrHandler(err)
+	}
+	if user == nil {
+		return nil, ErrNilUser
 	}
 	return user, nil
 }
 
 func hashPassword(password string) (string, error) {
-	hasher := sha256.New()
-	hasher.Write([]byte(password))
-	shaSum := hasher.Sum(nil)
-
-	bytes, err := bcrypt.GenerateFromPassword(shaSum, bcrypt.DefaultCost)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
 }
 
 func checkPasswordHash(password, hash string) bool {
-	hasher := sha256.New()
-	hasher.Write([]byte(password))
-	shaSum := hasher.Sum(nil)
-
-	err := bcrypt.CompareHashAndPassword([]byte(hash), shaSum)
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
 func repoErrHandler(err error) error {
-	if errors.Is(err, repository.ErrUsernameTaken) || errors.Is(err, repository.ErrUsernameNull) {
+	if errors.Is(err, repository.ErrUsernameTaken) {
 		return ErrUserAlreadyExists
 	}
 	if errors.Is(err, repository.ErrUserNotFound) {
@@ -122,9 +113,11 @@ func repoErrHandler(err error) error {
 }
 
 var (
-	ErrInvalidUsername   = errors.New("invalid username")
-	ErrUserNotFound      = errors.New("user not found")
-	ErrUserAlreadyExists = errors.New("user already exists")
-	ErrShortPassword     = errors.New("password too short")
-	ErrIncorrectPassword = errors.New("username or password are incorrect")
+	ErrInvalidUsername    = errors.New("invalid username")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrUserAlreadyExists  = errors.New("user already exists")
+	ErrShortPassword      = errors.New("password too short")
+	ErrLongPassword       = errors.New("password too long")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrNilUser            = errors.New("repository returned nil user")
 )

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,8 +25,10 @@ func (r *UserRepository) Create(ctx context.Context, user model.User) (string, e
 
 	err := r.db.QueryRow(ctx, sql, user.Username, user.PasswordHash).Scan(&id)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		return "", pgErrorHandler(pgErr, err)
+		if mappedErr := mapPostgresError(err); mappedErr != nil {
+			return "", mappedErr
+		}
+		return "", fmt.Errorf("create user: %w", err)
 	}
 
 	return id, nil
@@ -42,8 +45,10 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 		sql,
 		username,
 	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt); err != nil {
-		var pgErr *pgconn.PgError
-		return nil, pgErrorHandler(pgErr, err)
+		if mappedErr := mapPostgresError(err); mappedErr != nil {
+			return nil, mappedErr
+		}
+		return nil, fmt.Errorf("get user by username: %w", err)
 	}
 
 	return &user, nil
@@ -60,20 +65,20 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 		sql,
 		id,
 	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt); err != nil {
-		var pgErr *pgconn.PgError
-		return nil, pgErrorHandler(pgErr, err)
+		if mappedErr := mapPostgresError(err); mappedErr != nil {
+			return nil, mappedErr
+		}
+		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 
 	return &user, nil
 }
 
-func pgErrorHandler(pgErr *pgconn.PgError, err error) error {
+func mapPostgresError(err error) error {
+	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		if pgErr.Code == "23505" {
 			return ErrUsernameTaken
-		}
-		if pgErr.Code == "23502" {
-			return ErrUsernameNull
 		}
 	}
 
@@ -81,11 +86,10 @@ func pgErrorHandler(pgErr *pgconn.PgError, err error) error {
 		return ErrUserNotFound
 	}
 
-	return err
+	return nil
 }
 
 var (
 	ErrUsernameTaken = errors.New("username must be unique")
-	ErrUsernameNull  = errors.New("username must be not null")
 	ErrUserNotFound  = errors.New("user not found")
 )

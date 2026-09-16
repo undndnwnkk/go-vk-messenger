@@ -7,25 +7,29 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
+	"log"
 	"net/http"
 	"time"
 )
 
 type Handler struct {
-	user service.UserService
+	user       service.UserService
+	jwtService *service.JWTService
 }
 
-func NewHandler(user service.UserService) http.Handler {
-	h := &Handler{user: user}
+func NewHandler(user service.UserService, jwtService *service.JWTService) http.Handler {
+	h := &Handler{user: user, jwtService: jwtService}
 	r := chi.NewRouter()
 
-	r.Route("/api/v1/auth", func(r chi.Router) {
-		r.Post("/register", h.registerHandler)
-		r.Post("/login", h.loginHandler)
-	})
-	r.Group(func(r chi.Router) {
-		r.Use(JWTMiddleware)
-		r.Get("/me", h.meHandler)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", h.registerHandler)
+			r.Post("/login", h.loginHandler)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(JWTMiddleware(h.jwtService))
+			r.Get("/me", h.meHandler)
+		})
 	})
 
 	return r
@@ -40,8 +44,7 @@ func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.user.Register(r.Context(), req)
 	if err != nil {
-		status, code := errorListener(err)
-		WriteError(w, status, code, err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
@@ -59,12 +62,7 @@ func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.user.Login(r.Context(), req)
 	if err != nil {
-		if errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrIncorrectPassword) {
-			WriteError(w, http.StatusUnauthorized, "invalid_credentials", service.ErrIncorrectPassword.Error())
-			return
-		}
-		status, code := errorListener(err)
-		WriteError(w, status, code, err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
@@ -81,8 +79,7 @@ func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := h.user.Me(r.Context(), userID)
 	if err != nil {
-		status, code := errorListener(err)
-		WriteError(w, status, code, err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
@@ -126,22 +123,31 @@ func getUserIDFromContext(ctx context.Context) (string, bool) {
 	return userID, ok
 }
 
-func errorListener(err error) (int, string) {
+func WriteServiceError(w http.ResponseWriter, err error) {
+	status, code, message := publicError(err)
+	if status == http.StatusInternalServerError {
+		log.Printf("request failed: %v", err)
+	}
+
+	WriteError(w, status, code, message)
+}
+
+func publicError(err error) (int, string, string) {
 	if errors.Is(err, service.ErrInvalidUsername) || errors.Is(err, service.ErrUserNotFound) {
-		return http.StatusBadRequest, "invalid_username"
+		return http.StatusBadRequest, "invalid_username", err.Error()
 	}
 
 	if errors.Is(err, service.ErrUserAlreadyExists) {
-		return http.StatusConflict, "user_exists"
+		return http.StatusConflict, "user_exists", err.Error()
 	}
 
-	if errors.Is(err, service.ErrShortPassword) {
-		return http.StatusBadRequest, "short_password"
+	if errors.Is(err, service.ErrShortPassword) || errors.Is(err, service.ErrLongPassword) {
+		return http.StatusBadRequest, "invalid_password", err.Error()
 	}
 
-	if errors.Is(err, service.ErrIncorrectPassword) {
-		return http.StatusUnauthorized, "invalid_credentials"
+	if errors.Is(err, service.ErrInvalidCredentials) {
+		return http.StatusUnauthorized, "invalid_credentials", err.Error()
 	}
 
-	return http.StatusInternalServerError, "internal_server_error"
+	return http.StatusInternalServerError, "internal_error", "internal server error"
 }
