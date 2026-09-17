@@ -43,13 +43,3 @@ type CreateGroupChat struct {
 	Title   string   `json:"title"`
 	UserIDs []string `json:"user_ids"`
 }
-
-type GetChatByID struct {
-	ChatID string `json:"chat_id"`
-}
-
-type AddMember struct {
-	ChatID string   `json:"chat_id"`
-	UserID string   `json:"user_id"`
-	Role   ChatRole `json:"role"`
-}

@@ -101,6 +101,22 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 }
 
 func publicError(err error) (int, string, string) {
+	switch {
+	case errors.Is(err, service.ErrChatNotFound):
+		return http.StatusNotFound, "chat_not_found", service.ErrChatNotFound.Error()
+	case errors.Is(err, service.ErrMemberNotFound):
+		return http.StatusNotFound, "member_not_found", service.ErrMemberNotFound.Error()
+	case errors.Is(err, service.ErrNotAdmin):
+		return http.StatusForbidden, "forbidden", service.ErrNotAdmin.Error()
+	case errors.Is(err, service.ErrAlreadyMember):
+		return http.StatusConflict, "already_member", service.ErrAlreadyMember.Error()
+	case errors.Is(err, service.ErrInvalidTitle):
+		return http.StatusBadRequest, "invalid_title", service.ErrInvalidTitle.Error()
+	case errors.Is(err, service.ErrCannotModifyDirect):
+		return http.StatusBadRequest, "cannot_modify_direct", service.ErrCannotModifyDirect.Error()
+	case errors.Is(err, service.ErrCommonUser):
+		return http.StatusBadRequest, "same_user", service.ErrCommonUser.Error()
+	}
 	if errors.Is(err, service.ErrInvalidUsername) || errors.Is(err, service.ErrUserNotFound) {
 		return http.StatusBadRequest, "invalid_username", err.Error()
 	}
