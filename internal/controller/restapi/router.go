@@ -5,15 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
-	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"log"
 	"net/http"
-	"time"
 )
 
 type Handler struct {
 	user       service.UserService
+	chat       service.ChatService
 	jwtService *service.JWTService
 	health     HealthChecker
 }
@@ -22,8 +21,8 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
-func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService, health: health}
+func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService) http.Handler {
+	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat}
 	r := chi.NewRouter()
 
 	r.Get("/health", h.healthHandler)
@@ -35,6 +34,20 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 		r.Group(func(r chi.Router) {
 			r.Use(JWTMiddleware(h.jwtService))
 			r.Get("/me", h.meHandler)
+
+			r.Route("/chats", func(r chi.Router) {
+				r.Post("/direct", h.createDirectChatHandler)
+				r.Post("/group", h.createGroupChatHandler)
+
+				r.Get("/", h.getChatsHandler)
+				r.Get("/{chatID}", h.getChatByIDHandler)
+
+				r.Route("/{chatID}/members", func(r chi.Router) {
+					r.Get("/", h.getChatMembersHandler)
+					r.Post("/{userID}", h.addChatMemberHandler)
+					r.Delete("/{userID}", h.deleteChatMemberHandler)
+				})
+			})
 		})
 	})
 
@@ -49,75 +62,6 @@ func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", "invalid arguments: "+err.Error())
-		return
-	}
-
-	token, err := h.user.Register(r.Context(), req)
-	if err != nil {
-		WriteServiceError(w, err)
-		return
-	}
-
-	WriteJSON(w, http.StatusCreated, NewTokenResponse(token))
-}
-
-func (h *Handler) loginHandler(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-
-	token, err := h.user.Login(r.Context(), req)
-	if err != nil {
-		WriteServiceError(w, err)
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, NewTokenResponse(token))
-}
-
-func NewTokenResponse(token string) tokenResponse {
-	return tokenResponse{
-		AccessToken: token,
-		TokenType:   "Bearer",
-	}
-}
-
-type tokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-}
-
-func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {
-	userID, ok := getUserIDFromContext(r.Context())
-	if !ok {
-		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
-		return
-	}
-	user, err := h.user.Me(r.Context(), userID)
-	if err != nil {
-		WriteServiceError(w, err)
-		return
-	}
-
-	res := struct {
-		ID        string    `json:"id"`
-		Username  string    `json:"username"`
-		CreatedAt time.Time `json:"created_at"`
-	}{
-		ID:        user.ID,
-		Username:  user.Username,
-		CreatedAt: user.CreatedAt,
-	}
-
-	WriteJSON(w, http.StatusOK, res)
 }
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {
@@ -142,7 +86,7 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(&res)
 }
 
-func getUserIDFromContext(ctx context.Context) (string, bool) {
+func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
 }

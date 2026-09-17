@@ -5,13 +5,13 @@ import (
 )
 
 type ChatType string
-type MemberRole string
+type ChatRole string
 
 const (
-	Direct ChatType   = "direct"
-	Group  ChatType   = "group"
-	Admin  MemberRole = "admin"
-	Member MemberRole = "member"
+	Direct ChatType = "direct"
+	Group  ChatType = "group"
+	Admin  ChatRole = "admin"
+	Member ChatRole = "member"
 )
 
 type Chat struct {
@@ -23,13 +23,33 @@ type Chat struct {
 }
 
 type ChatMember struct {
-	ChatID string     `db:"chat_id"`
-	UserID string     `db:"user_id"`
-	Role   MemberRole `db:"role"`
+	ChatID   string    `db:"chat_id"`
+	UserID   string    `db:"user_id"`
+	Role     ChatRole  `db:"role"`
+	JoinedAt time.Time `db:"joined_at"`
 }
 
 type DirectChat struct {
 	ChatID  string `db:"chat_id"`
 	User1ID string `db:"user1_id"`
 	User2ID string `db:"user2_id"`
+}
+
+type CreateDirectChat struct {
+	UserID2 string `json:"user2_id"`
+}
+
+type CreateGroupChat struct {
+	Title   string   `json:"title"`
+	UserIDs []string `json:"user_ids"`
+}
+
+type GetChatByID struct {
+	ChatID string `json:"chat_id"`
+}
+
+type AddMember struct {
+	ChatID string   `json:"chat_id"`
+	UserID string   `json:"user_id"`
+	Role   ChatRole `json:"role"`
 }

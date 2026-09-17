@@ -1,10 +1,15 @@
 -- +goose Up
-CREATE TABLE IF NOT EXISTS direct_chats(
-    chat_id UUID PRIMARY KEY REFERENCES chats(id),
-    user1_id UUID REFERENCES users(id),
-    user2_id UUID REFERENCES users(id),
-
-    UNIQUE(user1_id, user2_id)
+CREATE TABLE direct_chats (
+    chat_id UUID PRIMARY KEY
+        REFERENCES chats(id)
+        ON DELETE CASCADE,
+    user1_id UUID NOT NULL
+        REFERENCES users(id),
+    user2_id UUID NOT NULL
+        REFERENCES users(id),
+        
+    UNIQUE(user1_id, user2_id),
+    CHECK(user1_id <> user2_id)
 );
 -- +goose Down
 
