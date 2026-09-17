@@ -35,6 +35,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 			r.Use(JWTMiddleware(h.jwtService))
 			r.Get("/me", h.meHandler)
 
+			r.Get("/chats", h.getChatsHandler)
 			r.Route("/chats", func(r chi.Router) {
 				r.Post("/direct", h.createDirectChatHandler)
 				r.Post("/group", h.createGroupChatHandler)
@@ -42,6 +43,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/", h.getChatsHandler)
 				r.Get("/{chatID}", h.getChatByIDHandler)
 
+				r.Get("/{chatID}/members", h.getChatMembersHandler)
 				r.Route("/{chatID}/members", func(r chi.Router) {
 					r.Get("/", h.getChatMembersHandler)
 					r.Post("/{userID}", h.addChatMemberHandler)
@@ -102,6 +104,12 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 
 func publicError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, service.ErrInvalidID):
+		return http.StatusBadRequest, "invalid_id", service.ErrInvalidID.Error()
+	case errors.Is(err, service.ErrTargetUserNotFound):
+		return http.StatusNotFound, "user_not_found", service.ErrTargetUserNotFound.Error()
+	case errors.Is(err, service.ErrCannotRemoveSelf):
+		return http.StatusConflict, "cannot_remove_self", service.ErrCannotRemoveSelf.Error()
 	case errors.Is(err, service.ErrChatNotFound):
 		return http.StatusNotFound, "chat_not_found", service.ErrChatNotFound.Error()
 	case errors.Is(err, service.ErrMemberNotFound):
