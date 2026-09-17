@@ -91,7 +91,7 @@ func validUsername(username string) bool {
 	return usernamePattern.MatchString(username)
 }
 
-func (s *UserService) Me(ctx context.Context, id string) (*model.User, error) {
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	user, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, repoErrHandler(err)

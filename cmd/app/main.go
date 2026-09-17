@@ -45,8 +45,10 @@ func main() {
 	userRepo := repository.NewUserRepository(pgxPool)
 	jwtService := service.NewJWTService(config.JWTConfig.Secret, config.JWTConfig.TTL)
 	userService := service.NewUserService(userRepo, jwtService)
+	chatRepo := repository.NewChatRepository(pgxPool)
+	chatService := service.NewChatService(chatRepo, *userService)
 
-	handler := restapi.NewHandler(*userService, jwtService, pgxPool)
+	handler := restapi.NewHandler(*userService, jwtService, pgxPool, *chatService)
 	server := http.Server{
 		Addr:    config.HTTPAddr(),
 		Handler: handler,
