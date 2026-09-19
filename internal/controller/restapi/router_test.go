@@ -73,7 +73,7 @@ func newTestHandler(t *testing.T, repo *fakeUserRepo) (http.Handler, *service.JW
 
 	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
 	userService := service.NewUserService(repo, jwtService)
-	return NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}), jwtService
+	return NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}), jwtService
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -166,7 +166,7 @@ func TestHealthHandler(t *testing.T) {
 	repo := newFakeUserRepo()
 	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
 	userService := service.NewUserService(repo, jwtService)
-	handler := NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{})
+	handler := NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -175,7 +175,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Fatalf("health status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	handler = NewHandler(*userService, jwtService, fakeHealthChecker{err: errors.New("database down")}, service.ChatService{})
+	handler = NewHandler(*userService, jwtService, fakeHealthChecker{err: errors.New("database down")}, service.ChatService{}, service.MessageService{})
 	req = httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

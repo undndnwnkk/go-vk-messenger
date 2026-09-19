@@ -13,12 +13,7 @@ type Message struct {
 }
 
 type CreateMessageRequest struct {
-	ChatID  string `json:"chat_id"`
 	Content string `json:"content"`
-}
-
-type HistoryRequest struct {
-	ChatID string `json:"chat_id"`
 }
 
 type MessagePage struct {

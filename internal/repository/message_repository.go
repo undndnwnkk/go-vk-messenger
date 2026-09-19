@@ -52,6 +52,8 @@ func (r *MessageRepository) ListBefore(
 		return nil, fmt.Errorf("error list before: %w", err)
 	}
 
+	defer rows.Close()
+
 	for rows.Next() {
 		var m model.Message
 		if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.Content, &m.CreatedAt); err != nil {
@@ -60,6 +62,9 @@ func (r *MessageRepository) ListBefore(
 		messages = append(messages, m)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate messages: %w", err)
+	}
 	return messages, nil
 }
 
@@ -76,6 +81,8 @@ func (r *MessageRepository) Search(
 		return nil, fmt.Errorf("error searching messages: %w", err)
 	}
 
+	defer rows.Close()
+
 	for rows.Next() {
 		var m model.Message
 		if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.Content, &m.CreatedAt); err != nil {
@@ -85,17 +92,10 @@ func (r *MessageRepository) Search(
 		messages = append(messages, m)
 	}
 
-	return messages, nil
-}
-
-func (r *MessageRepository) GetMaxMessageIDByChatID(ctx context.Context, chatID string) (*int64, error) {
-	var msgID *int64
-
-	if err := r.db.QueryRow(ctx, getMaxMessageIDByChatIDQuery, chatID).Scan(&msgID); err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate messages: %w", err)
 	}
-
-	return msgID, nil
+	return messages, nil
 }
 
 var (
@@ -106,7 +106,7 @@ var (
 	beforeIDQuery = `
 		SELECT id, chat_id, sender_id, content, created_at 
 		FROM messages
-		WHERE chat_id = $1 AND id < $2
+		WHERE chat_id = $1 AND ($2::bigint IS NULL OR id < $2)
 		ORDER BY id DESC
 		LIMIT $3
 	`
@@ -122,9 +122,5 @@ var (
   			AND content ILIKE '%' || $2 || '%'
 		ORDER BY id DESC
 		LIMIT $3;
-	`
-
-	getMaxMessageIDByChatIDQuery = `
-		SELECT MAX(id) FROM messages WHERE chat_id = $1 
 	`
 )

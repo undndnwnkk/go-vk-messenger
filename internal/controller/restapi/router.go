@@ -111,6 +111,16 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 
 func publicError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, service.ErrEmptyMessage):
+		return http.StatusBadRequest, "empty_message", service.ErrEmptyMessage.Error()
+	case errors.Is(err, service.ErrMessageTooLong):
+		return http.StatusBadRequest, "message_too_long", service.ErrMessageTooLong.Error()
+	case errors.Is(err, service.ErrInvalidLimit):
+		return http.StatusBadRequest, "invalid_limit", service.ErrInvalidLimit.Error()
+	case errors.Is(err, service.ErrInvalidCursor):
+		return http.StatusBadRequest, "invalid_cursor", service.ErrInvalidCursor.Error()
+	case errors.Is(err, service.ErrEmptySearchQuery):
+		return http.StatusBadRequest, "empty_search_query", service.ErrEmptySearchQuery.Error()
 	case errors.Is(err, service.ErrInvalidID):
 		return http.StatusBadRequest, "invalid_id", service.ErrInvalidID.Error()
 	case errors.Is(err, service.ErrTargetUserNotFound):

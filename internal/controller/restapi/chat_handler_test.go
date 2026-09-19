@@ -78,7 +78,7 @@ func chatTestHandler(t *testing.T, repo *httpChatRepo) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc), token
+	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc, service.MessageService{}), token
 }
 func TestChatHTTPRoutes(t *testing.T) {
 	cases := []struct {

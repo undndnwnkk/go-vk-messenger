@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"net/http"
 	"strconv"
 )
@@ -16,14 +17,14 @@ func (h *Handler) createMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req model.CreateMessageRequest
-	if err := json.NewEncoder(w).Encode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
 
-	res, err := h.message.Send(r.Context(), userID, req)
+	res, err := h.message.Send(r.Context(), userID, chi.URLParam(r, "chatID"), req)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
@@ -37,31 +38,29 @@ func (h *Handler) getMessagesHistoryHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req model.HistoryRequest
-	if err := json.NewEncoder(w).Encode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
+	limitNum := 50
+	params := r.URL.Query()
+	if params.Has("limit") {
+		n, err := strconv.Atoi(params.Get("limit"))
+		if err != nil {
+			WriteServiceError(w, service.ErrInvalidLimit)
+			return
+		}
+		limitNum = n
 	}
-
-	limit := chi.URLParam(r, "limit")
-	limitNum, err := strconv.Atoi(limit)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be number")
-		return
-	}
-
-	beforeID := chi.URLParam(r, "before_id")
 	var beforeIDRes *int64
-	if n, err := strconv.Atoi(beforeID); err != nil {
-		beforeIDRes = nil
-	} else {
-		tmp := int64(n)
-		beforeIDRes = &tmp
+	if params.Has("before_id") {
+		n, err := strconv.ParseInt(params.Get("before_id"), 10, 64)
+		if err != nil {
+			WriteServiceError(w, service.ErrInvalidCursor)
+			return
+		}
+		beforeIDRes = &n
 	}
 
-	messages, err := h.message.History(r.Context(), userID, req.ChatID, beforeIDRes, limitNum)
+	messages, err := h.message.History(r.Context(), userID, chi.URLParam(r, "chatID"), beforeIDRes, limitNum)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal_server_error", err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
@@ -75,17 +74,11 @@ func (h *Handler) searchMessagesHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req model.HistoryRequest
-	if err := json.NewEncoder(w).Encode(&req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
+	query := r.URL.Query().Get("q")
 
-	query := chi.URLParam(r, "query")
-
-	messages, err := h.message.Search(r.Context(), userID, req.ChatID, query)
+	messages, err := h.message.Search(r.Context(), userID, chi.URLParam(r, "chatID"), query)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal_server_error", err.Error())
+		WriteServiceError(w, err)
 		return
 	}
 
