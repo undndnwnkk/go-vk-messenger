@@ -69,6 +69,7 @@ func (s *MessageService) History(ctx context.Context, userID, chatID string, bef
 	if limit <= 0 {
 		return nil, ErrInvalidLimit
 	}
+	// Cap oversized pages; omitted limits are defaulted to 50 by HTTP.
 	if limit > 100 {
 		limit = 100
 	}
@@ -96,7 +97,8 @@ func (s *MessageService) History(ctx context.Context, userID, chatID string, bef
 }
 
 func (s *MessageService) Search(ctx context.Context, userID, chatID, query string) ([]model.Message, error) {
-	if strings.TrimSpace(query) == "" {
+	query = strings.TrimSpace(query)
+	if query == "" {
 		return nil, ErrEmptySearchQuery
 	}
 

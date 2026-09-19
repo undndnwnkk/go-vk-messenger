@@ -51,11 +51,9 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 					r.Delete("/{userID}", h.deleteChatMemberHandler)
 				})
 
-				r.Route("/{chatID}/messages", func(r chi.Router) {
-					r.Post("/", h.createMessageHandler)
-					r.Get("/", h.getMessagesHistoryHandler)
-					r.Get("/search", h.searchMessagesHandler)
-				})
+				r.Post("/{chatID}/messages", h.createMessageHandler)
+				r.Get("/{chatID}/messages", h.getMessagesHistoryHandler)
+				r.Get("/{chatID}/messages/search", h.searchMessagesHandler)
 			})
 		})
 	})
