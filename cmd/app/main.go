@@ -47,8 +47,10 @@ func main() {
 	userService := service.NewUserService(userRepo, jwtService)
 	chatRepo := repository.NewChatRepository(pgxPool)
 	chatService := service.NewChatService(chatRepo, *userService)
+	messageRepo := repository.NewMessageRepository(pgxPool)
+	messageService := service.NewMessageService(*messageRepo, *chatService)
 
-	handler := restapi.NewHandler(*userService, jwtService, pgxPool, *chatService)
+	handler := restapi.NewHandler(*userService, jwtService, pgxPool, *chatService, *messageService)
 	server := http.Server{
 		Addr:    config.HTTPAddr(),
 		Handler: handler,

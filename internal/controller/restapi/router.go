@@ -13,6 +13,7 @@ import (
 type Handler struct {
 	user       service.UserService
 	chat       service.ChatService
+	message    service.MessageService
 	jwtService *service.JWTService
 	health     HealthChecker
 }
@@ -21,8 +22,8 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
-func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat}
+func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService) http.Handler {
+	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message}
 	r := chi.NewRouter()
 
 	r.Get("/health", h.healthHandler)
@@ -48,6 +49,12 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 					r.Get("/", h.getChatMembersHandler)
 					r.Post("/{userID}", h.addChatMemberHandler)
 					r.Delete("/{userID}", h.deleteChatMemberHandler)
+				})
+
+				r.Route("/{chatID}/messages", func(r chi.Router) {
+					r.Post("/", h.createMessageHandler)
+					r.Get("/", h.getMessagesHistoryHandler)
+					r.Get("/search", h.searchMessagesHandler)
 				})
 			})
 		})
