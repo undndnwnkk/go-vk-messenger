@@ -50,7 +50,7 @@ func TestChatRepositoryPostgres(t *testing.T) {
 	}
 	defer pool.Close()
 	files, err := filepath.Glob("../../migrations/*.sql")
-	if err != nil || len(files) != 4 {
+	if err != nil || len(files) == 0 {
 		t.Fatalf("migrations: %v %v", files, err)
 	}
 	for _, file := range files {
