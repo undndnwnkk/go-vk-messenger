@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
@@ -56,7 +57,7 @@ func messageHTTPHandler(t *testing.T, repo *httpMessageRepo, accessErr error) (h
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(*user, jwt, fakeHealthChecker{}, *chat, *message), token
+	return NewHandler(*user, jwt, fakeHealthChecker{}, *chat, *message, realtime.NewHub()), token
 }
 func messageHTTPRequest(handler http.Handler, token, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 )
 
 func TestWebSocketWithoutJWT(t *testing.T) {
@@ -46,7 +47,8 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 			name = "abrupt_disconnect"
 		}
 		t.Run(name, func(t *testing.T) {
-			handler, jwtService := newTestHandler(t, newFakeUserRepo())
+			hub := realtime.NewHub()
+			handler, jwtService := newTestHandlerWithHub(t, newFakeUserRepo(), hub)
 			done := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/v1/ws" {
@@ -84,6 +86,9 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 			if readCtx.Err() != nil {
 				t.Fatalf("connection closed after message: %v", readCtx.Err())
 			}
+			if got := hub.ConnectionCount("user-1"); got != 1 {
+				t.Fatalf("connections after ping = %d, want 1", got)
+			}
 			if abrupt {
 				err = conn.CloseNow()
 			} else {
@@ -96,6 +101,9 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 			case <-done:
 			case <-ctx.Done():
 				t.Fatal("handler did not return after disconnect")
+			}
+			if got := hub.ConnectionCount("user-1"); got != 0 {
+				t.Fatalf("connections after disconnect = %d, want 0", got)
 			}
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/health", nil)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
@@ -70,10 +71,15 @@ func (r *fakeUserRepo) GetByID(_ context.Context, id string) (*model.User, error
 
 func newTestHandler(t *testing.T, repo *fakeUserRepo) (http.Handler, *service.JWTService) {
 	t.Helper()
+	return newTestHandlerWithHub(t, repo, realtime.NewHub())
+}
+
+func newTestHandlerWithHub(t *testing.T, repo *fakeUserRepo, hub *realtime.Hub) (http.Handler, *service.JWTService) {
+	t.Helper()
 
 	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
 	userService := service.NewUserService(repo, jwtService)
-	return NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}), jwtService
+	return NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}, hub), jwtService
 }
 
 func postJSON(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -166,7 +172,7 @@ func TestHealthHandler(t *testing.T) {
 	repo := newFakeUserRepo()
 	jwtService := service.NewJWTService("test-secret", 15*time.Minute)
 	userService := service.NewUserService(repo, jwtService)
-	handler := NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{})
+	handler := NewHandler(*userService, jwtService, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}, realtime.NewHub())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -175,7 +181,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Fatalf("health status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	handler = NewHandler(*userService, jwtService, fakeHealthChecker{err: errors.New("database down")}, service.ChatService{}, service.MessageService{})
+	handler = NewHandler(*userService, jwtService, fakeHealthChecker{err: errors.New("database down")}, service.ChatService{}, service.MessageService{}, realtime.NewHub())
 	req = httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

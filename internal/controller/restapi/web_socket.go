@@ -25,6 +25,7 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	client := realtime.NewClient(userID, conn)
-
+	h.hub.Register(client)
+	defer h.hub.Unregister(client)
 	client.ReadLoop(ctx)
 }

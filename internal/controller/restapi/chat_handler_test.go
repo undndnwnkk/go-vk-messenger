@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
@@ -78,7 +79,7 @@ func chatTestHandler(t *testing.T, repo *httpChatRepo) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc, service.MessageService{}), token
+	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc, service.MessageService{}, realtime.NewHub()), token
 }
 func TestChatHTTPRoutes(t *testing.T) {
 	cases := []struct {
