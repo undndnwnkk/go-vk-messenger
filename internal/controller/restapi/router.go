@@ -55,6 +55,8 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/{chatID}/messages", h.getMessagesHistoryHandler)
 				r.Get("/{chatID}/messages/search", h.searchMessagesHandler)
 			})
+
+			r.Get("/ws", h.webSocketHandler)
 		})
 	})
 
