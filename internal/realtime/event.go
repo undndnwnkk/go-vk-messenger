@@ -7,9 +7,11 @@ import (
 type EventType string
 
 const (
-	EventPing  EventType = "ping"
-	EventPong  EventType = "pong"
-	EventError EventType = "error"
+	EventPing        EventType = "ping"
+	EventPong        EventType = "pong"
+	EventError       EventType = "error"
+	EventSendMessage EventType = "send_message"
+	EventMessageAck  EventType = "message_ack"
 )
 
 type Event struct {
@@ -25,6 +27,11 @@ type ErrorEvent struct {
 	} `json:"error"`
 }
 
+type SendMessagePayload struct {
+	ChatID  string `json:"chat_id"`
+	Content string `json:"content"`
+}
+
 func NewErrorEvent(code, message string) []byte {
 	var event ErrorEvent
 	event.Type = EventError
@@ -38,4 +45,9 @@ func NewErrorEvent(code, message string) []byte {
 func MustJSON(event Event) []byte {
 	res, _ := json.Marshal(event)
 	return res
+}
+
+func MustEventJSON(eventType EventType, data any) []byte {
+	raw, _ := json.Marshal(data)
+	return MustJSON(Event{Type: eventType, Data: raw})
 }

@@ -2,10 +2,12 @@ package restapi
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 
 	"github.com/coder/websocket"
+	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"golang.org/x/sync/errgroup"
 )
@@ -38,6 +40,8 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 			switch event.Type {
 			case realtime.EventPing:
 				client.Send(realtime.MustJSON(realtime.Event{Type: realtime.EventPong}))
+			case realtime.EventSendMessage:
+				h.handleWebSocketSendMessage(ctx, client, userID, event)
 			default:
 				client.Send(realtime.NewErrorEvent("unsupported_event", "unsupported event type"))
 			}
@@ -52,4 +56,21 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("all loops ended successfully")
 	}
+}
+
+func (h *Handler) handleWebSocketSendMessage(ctx context.Context, client *realtime.Client, userID string, event realtime.Event) {
+	var payload realtime.SendMessagePayload
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		client.Send(realtime.NewErrorEvent("invalid_payload", "invalid websocket event payload"))
+		return
+	}
+
+	msg, err := h.message.Send(ctx, userID, payload.ChatID, model.CreateMessageRequest{Content: payload.Content})
+	if err != nil {
+		_, code, message := publicError(err)
+		client.Send(realtime.NewErrorEvent(code, message))
+		return
+	}
+
+	client.Send(realtime.MustEventJSON(realtime.EventMessageAck, msg))
 }
