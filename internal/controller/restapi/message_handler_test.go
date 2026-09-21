@@ -92,6 +92,109 @@ func TestMessageHTTPSend(t *testing.T) {
 		t.Fatalf("status=%d body=%s repo=%+v", rec.Code, rec.Body, repo)
 	}
 }
+
+func TestMessageHTTPBroadcastsMessageCreatedToWebSocketMembers(t *testing.T) {
+	repo := &httpMessageRepo{}
+	chatRepo := &httpChatRepo{members: []model.ChatMember{
+		{ChatID: httpMessageChat, UserID: httpMessageUser},
+		{ChatID: httpMessageChat, UserID: wsMessageBob},
+	}}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChat(t, repo, chatRepo, hub)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+
+	resp := postMessageToServer(t, ctx, server, generateWebSocketToken(t, jwt, httpMessageUser), `{"content":"hello"}`)
+	defer resp.Body.Close()
+	var msg model.Message
+	if err := json.NewDecoder(resp.Body).Decode(&msg); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated || msg.ID != 1 || msg.SenderID != httpMessageUser || msg.Content != "hello" {
+		t.Fatalf("status=%d message=%+v", resp.StatusCode, msg)
+	}
+
+	created := readMessageCreated(t, ctx, bob)
+	if created.ID != msg.ID || created.ChatID != httpMessageChat || created.SenderID != httpMessageUser || created.Content != "hello" {
+		t.Fatalf("message_created data = %+v, http message = %+v", created, msg)
+	}
+}
+
+func TestMessageHTTPRepositoryErrorDoesNotBroadcast(t *testing.T) {
+	repo := &httpMessageRepo{err: errors.New("secret database connection details")}
+	chatRepo := &httpChatRepo{members: []model.ChatMember{
+		{ChatID: httpMessageChat, UserID: httpMessageUser},
+		{ChatID: httpMessageChat, UserID: wsMessageBob},
+	}}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChat(t, repo, chatRepo, hub)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+
+	resp := postMessageToServer(t, ctx, server, generateWebSocketToken(t, jwt, httpMessageUser), `{"content":"hello"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+	assertNoWebSocketMessage(t, bob)
+}
+
+func TestMessageHTTPNotifierErrorStillReturnsCreated(t *testing.T) {
+	repo := &httpMessageRepo{}
+	chatRepo := &httpChatRepo{
+		members:        []model.ChatMember{{ChatID: httpMessageChat, UserID: wsMessageBob}},
+		listMembersErr: errors.New("secret notifier failure"),
+	}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChat(t, repo, chatRepo, hub)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+
+	resp := postMessageToServer(t, ctx, server, generateWebSocketToken(t, jwt, httpMessageUser), `{"content":"hello"}`)
+	defer resp.Body.Close()
+	var msg model.Message
+	if err := json.NewDecoder(resp.Body).Decode(&msg); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated || msg.ID != 1 || msg.SenderID != httpMessageUser || msg.Content != "hello" {
+		t.Fatalf("status=%d message=%+v", resp.StatusCode, msg)
+	}
+	assertNoWebSocketMessage(t, bob)
+}
+
+func postMessageToServer(t *testing.T, ctx context.Context, server *httptest.Server, token, body string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+httpMessagePath, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
 func TestMessageHTTPHistory(t *testing.T) {
 	for _, tc := range []struct {
 		name, suffix string

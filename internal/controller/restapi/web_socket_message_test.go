@@ -96,6 +96,7 @@ func TestWebSocketSendMessageBroadcastsMessageCreatedToOnlineChatMembers(t *test
 		if created.ID != ack.ID || created.ChatID != httpMessageChat || created.SenderID != httpMessageUser || created.Content != "hello" {
 			t.Fatalf("message_created data = %+v, ack = %+v", created, ack)
 		}
+		assertNoWebSocketMessage(t, conn)
 	}
 	assertNoWebSocketMessage(t, carol)
 }
@@ -154,6 +155,43 @@ func TestWebSocketSendMessageRepositoryErrorDoesNotBroadcast(t *testing.T) {
 	if !repo.called {
 		t.Fatal("message repository was not called")
 	}
+	assertNoWebSocketMessage(t, bob)
+}
+
+func TestWebSocketSendMessageNotifierErrorKeepsAck(t *testing.T) {
+	repo := &httpMessageRepo{}
+	chatRepo := &httpChatRepo{
+		members:        []model.ChatMember{{ChatID: httpMessageChat, UserID: wsMessageBob}},
+		listMembersErr: errors.New("secret notifier failure"),
+	}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChat(t, repo, chatRepo, hub)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, httpMessageUser))
+	defer alice.CloseNow()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+
+	waitForConnectionCount(t, ctx, hub, httpMessageUser, 1)
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+
+	writeTextMessage(t, ctx, alice, `{
+		"type":"send_message",
+		"data":{
+			"chat_id":"`+httpMessageChat+`",
+			"content":"hello"
+		}
+	}`)
+
+	ack := readMessageAck(t, ctx, alice)
+	if ack.ID != 1 || ack.SenderID != httpMessageUser || ack.Content != "hello" {
+		t.Fatalf("ack data = %+v", ack)
+	}
+	assertNoWebSocketMessage(t, alice)
 	assertNoWebSocketMessage(t, bob)
 }
 

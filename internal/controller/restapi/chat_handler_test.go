@@ -21,6 +21,7 @@ type httpChatRepo struct {
 	role                          model.ChatRole
 	memberIDs                     []string
 	members                       []model.ChatMember
+	listMembersErr                error
 	err                           error
 }
 
@@ -55,6 +56,9 @@ func (r *httpChatRepo) GetMember(_ context.Context, id, user string) (*model.Cha
 }
 func (r *httpChatRepo) ListMembers(_ context.Context, id string) ([]model.ChatMember, error) {
 	r.chatID = id
+	if r.listMembersErr != nil {
+		return nil, r.listMembersErr
+	}
 	if r.members != nil {
 		return r.members, r.err
 	}

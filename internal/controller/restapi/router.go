@@ -16,6 +16,7 @@ type Handler struct {
 	chat       service.ChatService
 	message    service.MessageService
 	hub        *realtime.Hub
+	notifier   *MessageNotifier
 	jwtService *service.JWTService
 	health     HealthChecker
 }
@@ -25,7 +26,7 @@ type HealthChecker interface {
 }
 
 func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub}
+	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub, notifier: NewMessageNotifier(chat, hub)}
 	r := chi.NewRouter()
 
 	r.Get("/health", h.healthHandler)
