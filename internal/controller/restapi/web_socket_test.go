@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,21 +75,7 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 				t.Fatalf("status = %d, want 101", resp.StatusCode)
 			}
 
-			// CloseRead rejects application messages, so Ping also verifies that
-			// the server consumed our message without sending an echo.
-			readCtx := conn.CloseRead(ctx)
-			if err := conn.Write(ctx, websocket.MessageText, []byte("ignored message")); err != nil {
-				t.Fatalf("write message: %v", err)
-			}
-			if err := conn.Ping(ctx); err != nil {
-				t.Fatalf("ping after message: %v", err)
-			}
-			if readCtx.Err() != nil {
-				t.Fatalf("connection closed after message: %v", readCtx.Err())
-			}
-			if got := hub.ConnectionCount("user-1"); got != 1 {
-				t.Fatalf("connections after ping = %d, want 1", got)
-			}
+			waitForConnectionCount(t, ctx, hub, "user-1", 1)
 			if abrupt {
 				err = conn.CloseNow()
 			} else {
@@ -119,6 +106,58 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 				t.Fatalf("health status after disconnect = %d, want 200", healthResp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestWebSocketPingPongAndEventErrors(t *testing.T) {
+	hub := realtime.NewHub()
+	handler, jwtService := newTestHandlerWithHub(t, newFakeUserRepo(), hub)
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/ws" {
+			defer close(done)
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	token, err := jwtService.GenerateToken("user-1")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("dial with JWT: %v", err)
+	}
+	defer conn.CloseNow()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+
+	writeTextMessage(t, ctx, conn, `{"type":"ping"}`)
+	assertWebSocketEvent(t, ctx, conn, "pong", "")
+
+	writeTextMessage(t, ctx, conn, `{asd`)
+	assertWebSocketEvent(t, ctx, conn, "error", "invalid_event")
+
+	writeTextMessage(t, ctx, conn, `{"type":"wtf"}`)
+	assertWebSocketEvent(t, ctx, conn, "error", "unsupported_event")
+
+	writeTextMessage(t, ctx, conn, `{"type":"ping"}`)
+	assertWebSocketEvent(t, ctx, conn, "pong", "")
+
+	if err := conn.Close(websocket.StatusNormalClosure, "done"); err != nil {
+		t.Fatalf("close connection: %v", err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("handler did not return after disconnect")
 	}
 }
 
@@ -173,6 +212,42 @@ func TestWebSocketReceivesHubMessage(t *testing.T) {
 	case <-done:
 	case <-ctx.Done():
 		t.Fatal("handler did not return after disconnect")
+	}
+}
+
+func writeTextMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, message string) {
+	t.Helper()
+
+	if err := conn.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
+		t.Fatalf("write websocket message %q: %v", message, err)
+	}
+}
+
+func assertWebSocketEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType, wantCode string) {
+	t.Helper()
+
+	msgType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read websocket event: %v", err)
+	}
+	if msgType != websocket.MessageText {
+		t.Fatalf("message type = %v, want %v", msgType, websocket.MessageText)
+	}
+
+	var event struct {
+		Type  string `json:"type"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		t.Fatalf("decode websocket event %q: %v", data, err)
+	}
+	if event.Type != wantType {
+		t.Fatalf("event type = %q, want %q; body: %s", event.Type, wantType, data)
+	}
+	if event.Error.Code != wantCode {
+		t.Fatalf("event error code = %q, want %q; body: %s", event.Error.Code, wantCode, data)
 	}
 }
 

@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/coder/websocket"
@@ -19,13 +20,13 @@ func NewClient(userID string, conn *websocket.Conn) *Client {
 	return &Client{userID: userID, conn: conn, send: make(chan []byte, sendBufferSize)}
 }
 
-func (c *Client) ReadLoop(ctx context.Context) error {
+func (c *Client) ReadLoop(ctx context.Context, handle func(Event)) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			_, _, err := c.conn.Read(ctx)
+			msgType, data, err := c.conn.Read(ctx)
 			if err != nil {
 				if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
 					websocket.CloseStatus(err) == websocket.StatusGoingAway {
@@ -35,6 +36,19 @@ func (c *Client) ReadLoop(ctx context.Context) error {
 				}
 				return err
 			}
+
+			if msgType != websocket.MessageText {
+				c.Send(NewErrorEvent("invalid_event", "invalid websocket event"))
+				continue
+			}
+
+			var event Event
+			if err := json.Unmarshal(data, &event); err != nil {
+				c.Send(NewErrorEvent("invalid_event", "invalid websocket event"))
+				continue
+			}
+
+			handle(event)
 		}
 
 	}

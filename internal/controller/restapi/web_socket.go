@@ -34,7 +34,14 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	g.Go(func() error {
 		defer cancel()
-		return client.ReadLoop(ctx)
+		return client.ReadLoop(ctx, func(event realtime.Event) {
+			switch event.Type {
+			case realtime.EventPing:
+				client.Send(realtime.MustJSON(realtime.Event{Type: realtime.EventPong}))
+			default:
+				client.Send(realtime.NewErrorEvent("unsupported_event", "unsupported event type"))
+			}
+		})
 	})
 	g.Go(func() error {
 		return client.WriteLoop(ctx)
