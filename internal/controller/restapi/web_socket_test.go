@@ -215,6 +215,93 @@ func TestWebSocketReceivesHubMessage(t *testing.T) {
 	}
 }
 
+func TestWebSocketHubShutdownClosesActiveConnection(t *testing.T) {
+	hub := realtime.NewHub()
+	handler, jwtService := newTestHandlerWithHub(t, newFakeUserRepo(), hub)
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/ws" {
+			defer close(done)
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	token, err := jwtService.GenerateToken("user-1")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("dial with JWT: %v", err)
+	}
+	defer conn.CloseNow()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+	waitForConnectionCount(t, ctx, hub, "user-1", 1)
+
+	hub.Shutdown()
+	_, _, err = conn.Read(ctx)
+	if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+		t.Fatalf("close status = %v, want %v; err=%v", websocket.CloseStatus(err), websocket.StatusNormalClosure, err)
+	}
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("handler did not return after hub shutdown")
+	}
+	if got := hub.ConnectionCount("user-1"); got != 0 {
+		t.Fatalf("connections after shutdown = %d, want 0", got)
+	}
+}
+
+func TestWebSocketHubShutdownClosesAllUserConnections(t *testing.T) {
+	hub := realtime.NewHub()
+	handler, jwtService := newTestHandlerWithHub(t, newFakeUserRepo(), hub)
+	done := make(chan struct{}, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/ws" {
+			defer func() { done <- struct{}{} }()
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	token, err := jwtService.GenerateToken("user-1")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn1 := dialWebSocket(t, ctx, server.URL, token)
+	defer conn1.CloseNow()
+	conn2 := dialWebSocket(t, ctx, server.URL, token)
+	defer conn2.CloseNow()
+	waitForConnectionCount(t, ctx, hub, "user-1", 2)
+
+	hub.Shutdown()
+	assertClosedWithStatus(t, ctx, conn1, websocket.StatusNormalClosure)
+	assertClosedWithStatus(t, ctx, conn2, websocket.StatusNormalClosure)
+	hub.Shutdown()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("handler did not return after hub shutdown")
+		}
+	}
+	if got := hub.ConnectionCount("user-1"); got != 0 {
+		t.Fatalf("connections after shutdown = %d, want 0", got)
+	}
+}
+
 func writeTextMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, message string) {
 	t.Helper()
 
@@ -248,6 +335,15 @@ func assertWebSocketEvent(t *testing.T, ctx context.Context, conn *websocket.Con
 	}
 	if event.Error.Code != wantCode {
 		t.Fatalf("event error code = %q, want %q; body: %s", event.Error.Code, wantCode, data)
+	}
+}
+
+func assertClosedWithStatus(t *testing.T, ctx context.Context, conn *websocket.Conn, want websocket.StatusCode) {
+	t.Helper()
+
+	_, _, err := conn.Read(ctx)
+	if websocket.CloseStatus(err) != want {
+		t.Fatalf("close status = %v, want %v; err=%v", websocket.CloseStatus(err), want, err)
 	}
 }
 

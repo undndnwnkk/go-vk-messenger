@@ -93,7 +93,15 @@ func main() {
 	)
 	defer cancel()
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	shutdownErr := make(chan error, 1)
+	go func() {
+		shutdownErr <- server.Shutdown(shutdownCtx)
+	}()
+
+	hub.Shutdown()
+	log.Println("websocket clients closed")
+
+	if err := <-shutdownErr; err != nil {
 		log.Printf("http server shutdown failed: %v", err)
 		return
 	}

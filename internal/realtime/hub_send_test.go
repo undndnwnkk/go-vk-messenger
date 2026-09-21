@@ -42,6 +42,44 @@ func TestHubSendToUsersSendsOnlyToListedUsers(t *testing.T) {
 	assertNoQueuedMessage(t, carol)
 }
 
+func TestHubSendToUserRemovesSlowClientWithoutBlockingOthers(t *testing.T) {
+	hub := NewHub()
+	slow := NewClient("bob", nil)
+	fast := NewClient("bob", nil)
+
+	for i := 0; i < sendBufferSize; i++ {
+		if !slow.Send([]byte("backlog")) {
+			t.Fatalf("slow client queue filled early at %d", i)
+		}
+	}
+	hub.Register(slow)
+	hub.Register(fast)
+
+	hub.SendToUser("bob", []byte("created"))
+
+	assertQueuedMessage(t, fast, "created")
+	if got := hub.ConnectionCount("bob"); got != 1 {
+		t.Fatalf("ConnectionCount(%q) = %d, want 1", "bob", got)
+	}
+}
+
+func TestHubShutdownClearsClientsAndIsIdempotent(t *testing.T) {
+	hub := NewHub()
+	hub.Register(NewClient("alice", nil))
+	hub.Register(NewClient("alice", nil))
+	hub.Register(NewClient("bob", nil))
+
+	hub.Shutdown()
+	hub.Shutdown()
+
+	if got := hub.ConnectionCount("alice"); got != 0 {
+		t.Fatalf("ConnectionCount(%q) = %d, want 0", "alice", got)
+	}
+	if got := hub.ConnectionCount("bob"); got != 0 {
+		t.Fatalf("ConnectionCount(%q) = %d, want 0", "bob", got)
+	}
+}
+
 func assertQueuedMessage(t *testing.T, client *Client, want string) {
 	t.Helper()
 

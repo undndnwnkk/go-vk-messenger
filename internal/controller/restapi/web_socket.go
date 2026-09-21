@@ -3,6 +3,7 @@ package restapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -51,10 +52,8 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return client.WriteLoop(ctx)
 	})
 
-	if err := g.Wait(); err != nil {
+	if err := g.Wait(); err != nil && !isExpectedWebSocketClose(err) {
 		log.Printf("read loop or write loop ended with error: %v", err)
-	} else {
-		log.Printf("all loops ended successfully")
 	}
 }
 
@@ -75,5 +74,17 @@ func (h *Handler) handleWebSocketSendMessage(ctx context.Context, client *realti
 	client.Send(realtime.MustEventJSON(realtime.EventMessageAck, msg))
 	if err := h.notifier.NotifyMessageCreated(ctx, userID, msg); err != nil {
 		log.Printf("websocket message created broadcast failed: %v", err)
+	}
+}
+
+func isExpectedWebSocketClose(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	switch websocket.CloseStatus(err) {
+	case websocket.StatusNormalClosure, websocket.StatusGoingAway, websocket.StatusPolicyViolation:
+		return true
+	default:
+		return false
 	}
 }

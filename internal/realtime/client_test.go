@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestClientSendReturnsFalseWhenQueueIsFull(t *testing.T) {
@@ -50,4 +52,11 @@ func TestClientWriteLoopStopsWhenContextCancelled(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("WriteLoop did not stop after context cancellation")
 	}
+}
+
+func TestClientCloseIsIdempotent(t *testing.T) {
+	client := NewClient("alice", nil)
+
+	client.Close(websocket.StatusNormalClosure, "done")
+	client.Close(websocket.StatusNormalClosure, "done again")
 }
