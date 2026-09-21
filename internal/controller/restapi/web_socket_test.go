@@ -121,3 +121,74 @@ func TestWebSocketWithJWTAndDisconnect(t *testing.T) {
 		})
 	}
 }
+
+func TestWebSocketReceivesHubMessage(t *testing.T) {
+	hub := realtime.NewHub()
+	handler, jwtService := newTestHandlerWithHub(t, newFakeUserRepo(), hub)
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/ws" {
+			defer close(done)
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	token, err := jwtService.GenerateToken("user-1")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("dial with JWT: %v", err)
+	}
+	defer conn.CloseNow()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+
+	waitForConnectionCount(t, ctx, hub, "user-1", 1)
+	hub.SendToUser("user-1", []byte("hello"))
+
+	msgType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read hub message: %v", err)
+	}
+	if msgType != websocket.MessageText {
+		t.Fatalf("message type = %v, want %v", msgType, websocket.MessageText)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("message = %q, want %q", data, "hello")
+	}
+
+	if err := conn.Close(websocket.StatusNormalClosure, "done"); err != nil {
+		t.Fatalf("close connection: %v", err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("handler did not return after disconnect")
+	}
+}
+
+func waitForConnectionCount(t *testing.T, ctx context.Context, hub *realtime.Hub, userID string, want int) {
+	t.Helper()
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if got := hub.ConnectionCount(userID); got == want {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("ConnectionCount(%q) did not become %d before timeout", userID, want)
+		}
+	}
+}

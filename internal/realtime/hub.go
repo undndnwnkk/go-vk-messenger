@@ -36,3 +36,11 @@ func (h *Hub) ConnectionCount(userID string) int {
 	defer h.mux.RUnlock()
 	return len(h.clients[userID])
 }
+
+func (h *Hub) SendToUser(userID string, data []byte) {
+	h.mux.RLock()
+	defer h.mux.RUnlock()
+	for client := range h.clients[userID] {
+		client.Send(data)
+	}
+}

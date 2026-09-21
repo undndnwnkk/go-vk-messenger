@@ -1,11 +1,13 @@
 package restapi
 
 import (
+	"context"
 	"log"
 	"net/http"
 
 	"github.com/coder/websocket"
 	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
+	"golang.org/x/sync/errgroup"
 )
 
 func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
@@ -22,10 +24,25 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 
-	ctx := r.Context()
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
 
 	client := realtime.NewClient(userID, conn)
 	h.hub.Register(client)
 	defer h.hub.Unregister(client)
-	client.ReadLoop(ctx)
+
+	g.Go(func() error {
+		defer cancel()
+		return client.ReadLoop(ctx)
+	})
+	g.Go(func() error {
+		return client.WriteLoop(ctx)
+	})
+
+	if err := g.Wait(); err != nil {
+		log.Printf("read loop or write loop ended with error: %v", err)
+	} else {
+		log.Printf("all loops ended successfully")
+	}
 }
