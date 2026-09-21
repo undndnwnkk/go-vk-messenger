@@ -2,11 +2,13 @@ package restapi
 
 import (
 	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
-	"net/http"
-	"strconv"
 )
 
 func (h *Handler) createMessageHandler(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +28,10 @@ func (h *Handler) createMessageHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteServiceError(w, err)
 		return
+	}
+
+	if err := h.notifier.NotifyMessageCreated(r.Context(), userID, res); err != nil {
+		log.Printf("http message created broadcast failed: %v", err)
 	}
 
 	WriteJSON(w, http.StatusCreated, res)

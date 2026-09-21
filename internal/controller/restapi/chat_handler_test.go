@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
@@ -19,6 +20,8 @@ type httpChatRepo struct {
 	caller, chatID, target, title string
 	role                          model.ChatRole
 	memberIDs                     []string
+	members                       []model.ChatMember
+	listMembersErr                error
 	err                           error
 }
 
@@ -53,6 +56,12 @@ func (r *httpChatRepo) GetMember(_ context.Context, id, user string) (*model.Cha
 }
 func (r *httpChatRepo) ListMembers(_ context.Context, id string) ([]model.ChatMember, error) {
 	r.chatID = id
+	if r.listMembersErr != nil {
+		return nil, r.listMembersErr
+	}
+	if r.members != nil {
+		return r.members, r.err
+	}
 	return []model.ChatMember{}, r.err
 }
 func (r *httpChatRepo) AddMember(_ context.Context, id, user string, role model.ChatRole) error {
@@ -78,7 +87,7 @@ func chatTestHandler(t *testing.T, repo *httpChatRepo) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc, service.MessageService{}), token
+	return NewHandler(*userSvc, jwt, fakeHealthChecker{}, *chatSvc, service.MessageService{}, realtime.NewHub()), token
 }
 func TestChatHTTPRoutes(t *testing.T) {
 	cases := []struct {

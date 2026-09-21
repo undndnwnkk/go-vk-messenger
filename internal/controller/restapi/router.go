@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 	"log"
 	"net/http"
@@ -14,6 +15,8 @@ type Handler struct {
 	user       service.UserService
 	chat       service.ChatService
 	message    service.MessageService
+	hub        *realtime.Hub
+	notifier   *MessageNotifier
 	jwtService *service.JWTService
 	health     HealthChecker
 }
@@ -22,8 +25,8 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
-func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message}
+func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub) http.Handler {
+	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub, notifier: NewMessageNotifier(chat, hub)}
 	r := chi.NewRouter()
 
 	r.Get("/health", h.healthHandler)
@@ -55,6 +58,8 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/{chatID}/messages", h.getMessagesHistoryHandler)
 				r.Get("/{chatID}/messages/search", h.searchMessagesHandler)
 			})
+
+			r.Get("/ws", h.webSocketHandler)
 		})
 	})
 
