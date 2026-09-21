@@ -5,10 +5,12 @@ import (
 	"net/http"
 
 	"github.com/coder/websocket"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 )
 
 func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
-	if _, ok := GetUserIDFromContext(r.Context()); !ok {
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
 		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
 		return
 	}
@@ -21,16 +23,8 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 
 	ctx := r.Context()
-	for {
-		_, _, err := conn.Read(ctx)
-		if err != nil {
-			if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
-				websocket.CloseStatus(err) == websocket.StatusGoingAway {
-				log.Printf("websocket closed normally")
-			} else {
-				log.Printf("websocket read err: %v", err)
-			}
-			return
-		}
-	}
+
+	client := realtime.NewClient(userID, conn)
+
+	client.ReadLoop(ctx)
 }
