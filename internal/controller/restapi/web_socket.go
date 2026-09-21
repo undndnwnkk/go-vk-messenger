@@ -73,4 +73,15 @@ func (h *Handler) handleWebSocketSendMessage(ctx context.Context, client *realti
 	}
 
 	client.Send(realtime.MustEventJSON(realtime.EventMessageAck, msg))
+	members, err := h.chat.GetMembersByChatID(ctx, userID, msg.ChatID)
+	if err != nil {
+		log.Printf("websocket message created broadcast failed: %v", err)
+		return
+	}
+
+	userIDs := make([]string, 0, len(members))
+	for _, member := range members {
+		userIDs = append(userIDs, member.UserID)
+	}
+	h.hub.SendToUsers(userIDs, realtime.MustEventJSON(realtime.EventMessageCreated, msg))
 }

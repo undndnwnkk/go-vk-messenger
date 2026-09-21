@@ -44,3 +44,9 @@ func (h *Hub) SendToUser(userID string, data []byte) {
 		client.Send(data)
 	}
 }
+
+func (h *Hub) SendToUsers(userIDs []string, data []byte) {
+	for _, userID := range userIDs {
+		h.SendToUser(userID, data)
+	}
+}

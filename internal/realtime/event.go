@@ -7,11 +7,12 @@ import (
 type EventType string
 
 const (
-	EventPing        EventType = "ping"
-	EventPong        EventType = "pong"
-	EventError       EventType = "error"
-	EventSendMessage EventType = "send_message"
-	EventMessageAck  EventType = "message_ack"
+	EventPing           EventType = "ping"
+	EventPong           EventType = "pong"
+	EventError          EventType = "error"
+	EventSendMessage    EventType = "send_message"
+	EventMessageAck     EventType = "message_ack"
+	EventMessageCreated EventType = "message_created"
 )
 
 type Event struct {

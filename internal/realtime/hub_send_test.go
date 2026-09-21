@@ -22,6 +22,26 @@ func TestHubSendToUserSendsToAllUserConnections(t *testing.T) {
 	assertNoQueuedMessage(t, bob)
 }
 
+func TestHubSendToUsersSendsOnlyToListedUsers(t *testing.T) {
+	hub := NewHub()
+	alice := NewClient("alice", nil)
+	bob1 := NewClient("bob", nil)
+	bob2 := NewClient("bob", nil)
+	carol := NewClient("carol", nil)
+
+	hub.Register(alice)
+	hub.Register(bob1)
+	hub.Register(bob2)
+	hub.Register(carol)
+
+	hub.SendToUsers([]string{"alice", "bob"}, []byte("created"))
+
+	assertQueuedMessage(t, alice, "created")
+	assertQueuedMessage(t, bob1, "created")
+	assertQueuedMessage(t, bob2, "created")
+	assertNoQueuedMessage(t, carol)
+}
+
 func assertQueuedMessage(t *testing.T, client *Client, want string) {
 	t.Helper()
 
