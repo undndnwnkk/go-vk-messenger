@@ -1,0 +1,407 @@
+{
+  "info": {
+    "name": "Go VK Messenger Smoke",
+    "description": "Minimal REST smoke flow for Go VK Messenger. Set base_url before running. Tokens and IDs are saved into collection variables by test scripts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "alice_username",
+      "value": "alice"
+    },
+    {
+      "key": "bob_username",
+      "value": "bob"
+    },
+    {
+      "key": "password",
+      "value": "password123"
+    },
+    {
+      "key": "alice_token",
+      "value": ""
+    },
+    {
+      "key": "bob_token",
+      "value": ""
+    },
+    {
+      "key": "alice_id",
+      "value": ""
+    },
+    {
+      "key": "bob_id",
+      "value": ""
+    },
+    {
+      "key": "chat_id",
+      "value": ""
+    },
+    {
+      "key": "message_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('health is ok', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Register Alice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{alice_username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('register alice created or already exists', function () {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('alice_token', pm.response.json().access_token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Register Bob",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{bob_username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('register bob created or already exists', function () {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('bob_token', pm.response.json().access_token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login Alice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{alice_username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('login alice ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('alice_token', pm.response.json().access_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login Bob",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{bob_username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('login bob ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('bob_token', pm.response.json().access_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Alice",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('get alice ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('alice_id', pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Bob",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bob_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('get bob ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('bob_id', pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Direct Chat",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user2_id\": \"{{bob_id}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/chats/direct"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('create direct chat ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('chat_id', pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Chats",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/chats"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('get chats ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('response is array', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Send Message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"content\": \"hello bob\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('send message created', function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set('message_id', pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get History",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bob_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages?limit=50"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('history ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('history has messages', function () { pm.expect(pm.response.json().messages).to.be.an('array'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bob_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/search?q=hello"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('search ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('search response is array', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mark Read",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bob_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message_id\": {{message_id}}\n}"
+        },
+        "url": "{{base_url}}/api/v1/chats/{{chat_id}}/read"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('mark read ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('read state uses message id', function () { pm.expect(pm.response.json().last_read_message_id).to.eql(Number(pm.collectionVariables.get('message_id'))); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
