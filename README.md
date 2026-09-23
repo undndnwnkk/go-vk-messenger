@@ -129,9 +129,9 @@ migrations/              goose SQL migrations
 - Go version from [go.mod](go.mod).
 - Docker and Docker Compose.
 - PostgreSQL for non-Docker local development.
-- `make` for the included Windows-oriented Makefile, or direct Go/Docker commands.
+- GNU Make for convenience targets, or direct Go/Docker commands.
 
-The Makefile runs goose through:
+The local Makefile runs goose through:
 
 ```bash
 go run github.com/pressly/goose/v3/cmd/goose@latest
@@ -165,7 +165,7 @@ JWT_SECRET=dev-secret-change-me
 JWT_TTL=15m
 ```
 
-For Docker Compose, the app container overrides `DB_HOST` to `db`, because containers must connect to PostgreSQL by compose service name, not by `localhost`.
+For Docker Compose, the app container overrides `DB_HOST` to `db`, because containers must connect to PostgreSQL by compose service name, not by `localhost`. PostgreSQL 18 data is persisted by mounting the named volume at `/var/lib/postgresql`, which matches the official image data root layout for PostgreSQL 18+.
 
 Do not commit real production passwords, JWT secrets, access tokens, deployment credentials, local dumps, logs, or `.env` files. `.env` is ignored by Git.
 
@@ -181,9 +181,7 @@ Startup validation:
 git clone <repository-url>
 cd go-vk-messenger
 cp .env.example .env
-docker compose up -d db
-make migrate-up
-docker compose up -d --build app
+docker compose up -d --build
 curl http://localhost:8080/health
 ```
 
@@ -203,10 +201,12 @@ make docker-logs
 make docker-down
 ```
 
-If you changed database credentials, pass the same values to migration commands:
+Docker Compose starts three services: `db`, one-shot `migrate`, and `app`. The app waits for PostgreSQL to become healthy and for migrations to finish successfully. This path needs Docker only; local Go and local make are not required.
+
+If you changed database credentials, the `migrate` service receives the same values through compose variable substitution. For an already running environment, rerun migrations explicitly with:
 
 ```bash
-make migrate-up DB_USER=postgres DB_PASSWORD=postgres DB_NAME=messenger_db DB_PORT=5432
+docker compose run --rm migrate
 ```
 
 ## Run without Docker
@@ -257,7 +257,7 @@ make migrate-up
 make migrate-down
 ```
 
-The app does not run migrations automatically. Deployments must apply migrations before starting the app version that needs the new schema.
+The app binary does not run migrations itself. In Docker Compose, the one-shot `migrate` service applies migrations before `app` starts. In production, keep the same order: run migrations before starting the app version that needs the new schema.
 
 ## Makefile
 
@@ -274,12 +274,14 @@ make migrate-create name=add_some_table
 
 make docker-build
 make docker-up
+make docker-migrate
 make docker-down
+make docker-reset
 make docker-logs
 make docker-ps
 ```
 
-The included Makefile is written for the Windows `make` available in this development environment and wraps commands with `cmd /C`. On Unix-like systems, use the direct Go/Docker commands shown above or remove `cmd /C` from command lines.
+The Makefile is written for GNU Make on Linux/macOS. Docker startup does not depend on Makefile; use `docker compose up -d --build` on any machine with Docker Compose.
 
 ## CI
 
@@ -838,7 +840,7 @@ provision PostgreSQL
 ↓
 set production environment variables
 ↓
-run migrations
+run migrations with a one-shot job/container
 ↓
 deploy/start app
 ↓

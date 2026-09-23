@@ -129,9 +129,9 @@ migrations/              goose SQL migrations
 - Go версии из [go.mod](go.mod).
 - Docker и Docker Compose.
 - PostgreSQL для запуска без Docker.
-- `make` для текущего Windows-oriented Makefile или прямые Go/Docker команды.
+- GNU Make для удобных команд или прямые Go/Docker команды.
 
-Makefile запускает goose через:
+Локальный Makefile запускает goose через:
 
 ```bash
 go run github.com/pressly/goose/v3/cmd/goose@latest
@@ -165,7 +165,7 @@ JWT_SECRET=dev-secret-change-me
 JWT_TTL=15m
 ```
 
-Для Docker Compose app container переопределяет `DB_HOST=db`, потому что внутри docker network PostgreSQL доступен по имени service, а не через `localhost`.
+Для Docker Compose app container переопределяет `DB_HOST=db`, потому что внутри docker network PostgreSQL доступен по имени service, а не через `localhost`. Для PostgreSQL 18 named volume монтируется в `/var/lib/postgresql`, что соответствует актуальному data root layout официального image PostgreSQL 18+.
 
 Нельзя коммитить реальные production passwords, JWT secrets, access tokens, deployment credentials, dumps, logs и `.env`. `.env` находится в `.gitignore`.
 
@@ -181,9 +181,7 @@ Startup validation:
 git clone <repository-url>
 cd go-vk-messenger
 cp .env.example .env
-docker compose up -d db
-make migrate-up
-docker compose up -d --build app
+docker compose up -d --build
 curl http://localhost:8080/health
 ```
 
@@ -203,10 +201,12 @@ make docker-logs
 make docker-down
 ```
 
-Если поменял database credentials, передай те же значения в migration command:
+Docker Compose запускает три service: `db`, одноразовый `migrate` и `app`. App ждёт, пока PostgreSQL станет healthy и migrations успешно завершатся. Этот сценарий требует только Docker; локальные Go и make не нужны.
+
+Если поменял database credentials, `migrate` service получает те же значения через compose variable substitution. Для уже запущенного окружения миграции можно повторно запустить явно:
 
 ```bash
-make migrate-up DB_USER=postgres DB_PASSWORD=postgres DB_NAME=messenger_db DB_PORT=5432
+docker compose run --rm migrate
 ```
 
 ## Запуск без Docker
@@ -257,7 +257,7 @@ make migrate-up
 make migrate-down
 ```
 
-Приложение не применяет миграции автоматически. В deployment flow миграции нужно выполнить до запуска версии приложения, которой нужна новая схема.
+Бинарник приложения не применяет миграции сам. В Docker Compose одноразовый `migrate` service применяет миграции до старта `app`. В production сохраняй тот же порядок: миграции до запуска версии приложения, которой нужна новая схема.
 
 ## Makefile
 
@@ -274,12 +274,14 @@ make migrate-create name=add_some_table
 
 make docker-build
 make docker-up
+make docker-migrate
 make docker-down
+make docker-reset
 make docker-logs
 make docker-ps
 ```
 
-Текущий Makefile написан под Windows `make` из этой dev-среды и использует `cmd /C`. На Unix-like системах проще выполнить прямые команды из README или убрать `cmd /C`.
+Makefile написан под GNU Make на Linux/macOS. Docker startup не зависит от Makefile; на любой машине с Docker Compose можно использовать `docker compose up -d --build`.
 
 ## CI
 
@@ -705,7 +707,7 @@ provision PostgreSQL
 ↓
 set production environment variables
 ↓
-run migrations
+run migrations через one-shot job/container
 ↓
 deploy/start app
 ↓
