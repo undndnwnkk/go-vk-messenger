@@ -13,6 +13,7 @@ const (
 	EventSendMessage    EventType = "send_message"
 	EventMessageAck     EventType = "message_ack"
 	EventMessageCreated EventType = "message_created"
+	EventReadUpdated    EventType = "read_updated"
 )
 
 type Event struct {

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
@@ -16,6 +17,7 @@ const messageChat = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 type messageRepoStub struct {
 	called                       bool
+	createCount                  int
 	chat, sender, content, query string
 	before                       *int64
 	limit                        int
@@ -25,6 +27,7 @@ type messageRepoStub struct {
 
 func (r *messageRepoStub) Create(_ context.Context, chat, sender, content string) (*model.Message, error) {
 	r.called, r.chat, r.sender, r.content = true, chat, sender, content
+	r.createCount++
 	return &model.Message{ID: 1, ChatID: chat, SenderID: sender, Content: content}, r.err
 }
 func (r *messageRepoStub) ListBefore(_ context.Context, chat string, before *int64, limit int) ([]model.Message, error) {
@@ -155,6 +158,33 @@ func TestMessageAccessAndErrorPropagation(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMessageSendRateLimit(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := NewMessageRateLimiterWithClock(func() time.Time { return now })
+	repo := &messageRepoStub{}
+	svc := NewMessageServiceWithLimiter(repo, *NewChatService(&chatRepoStub{}, UserService{}), limiter)
+
+	for i := 0; i < MessageRateLimitCount; i++ {
+		if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+	if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("11th send error = %v, want rate limited", err)
+	}
+	if repo.createCount != MessageRateLimitCount {
+		t.Fatalf("repository creates = %d, want %d", repo.createCount, MessageRateLimitCount)
+	}
+
+	now = now.Add(MessageRateLimitWindow + time.Millisecond)
+	if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); err != nil {
+		t.Fatalf("send after window: %v", err)
+	}
+	if repo.createCount != MessageRateLimitCount+1 {
+		t.Fatalf("repository creates after window = %d", repo.createCount)
 	}
 }
 

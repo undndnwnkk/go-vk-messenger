@@ -22,6 +22,10 @@ type httpChatRepo struct {
 	memberIDs                     []string
 	members                       []model.ChatMember
 	listMembersErr                error
+	readState                     *model.ChatReadState
+	readAdvanced                  bool
+	readErr                       error
+	readMessageID                 int64
 	err                           error
 }
 
@@ -75,6 +79,18 @@ func (r *httpChatRepo) RemoveMember(_ context.Context, id, user string) error {
 	r.target = user
 	return r.err
 }
+func (r *httpChatRepo) MarkRead(_ context.Context, id, user string, messageID int64) (*model.ChatReadState, bool, error) {
+	r.chatID = id
+	r.caller = user
+	r.readMessageID = messageID
+	if r.readErr != nil {
+		return nil, false, r.readErr
+	}
+	if r.readState != nil {
+		return r.readState, r.readAdvanced, nil
+	}
+	return &model.ChatReadState{ChatID: id, UserID: user, LastReadMessageID: messageID}, r.readAdvanced, nil
+}
 
 func chatTestHandler(t *testing.T, repo *httpChatRepo) (http.Handler, string) {
 	t.Helper()
@@ -100,6 +116,7 @@ func TestChatHTTPRoutes(t *testing.T) {
 		{"ListSlash", "GET", "/api/v1/chats/", "", 200},
 		{"Get", "GET", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc", "", 200},
 		{"Members", "GET", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/members", "", 200},
+		{"Read", "POST", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/read", `{"message_id":7}`, 200},
 		{"Add", "POST", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/members/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", `{"role":"admin","chat_id":"wrong","user_id":"wrong"}`, 204},
 		{"Delete", "DELETE", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/members/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "", 204},
 	}
@@ -134,10 +151,13 @@ func TestChatHTTPRoutes(t *testing.T) {
 			if tc.name == "Direct" && repo.target != "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" {
 				t.Fatal("direct body not decoded")
 			}
-			if tc.name == "Get" || tc.name == "Members" || tc.name == "Add" || tc.name == "Delete" {
+			if tc.name == "Get" || tc.name == "Members" || tc.name == "Read" || tc.name == "Add" || tc.name == "Delete" {
 				if repo.chatID != "cccccccc-cccc-4ccc-8ccc-cccccccccccc" {
 					t.Fatal("wrong chat URL param")
 				}
+			}
+			if tc.name == "Read" && repo.readMessageID != 7 {
+				t.Fatalf("wrong read message id = %d", repo.readMessageID)
 			}
 			if tc.name == "Add" && repo.role != model.Member {
 				t.Fatal("client chose role")
@@ -149,7 +169,7 @@ func TestChatHTTPRoutes(t *testing.T) {
 	}
 }
 func TestChatHTTPBadJSON(t *testing.T) {
-	for _, path := range []string{"/api/v1/chats/direct", "/api/v1/chats/group"} {
+	for _, path := range []string{"/api/v1/chats/direct", "/api/v1/chats/group", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/read"} {
 		repo := &httpChatRepo{}
 		handler, token := chatTestHandler(t, repo)
 		req := httptest.NewRequest("POST", path, strings.NewReader("{"))
@@ -166,7 +186,7 @@ func TestChatHTTPErrorMapping(t *testing.T) {
 		err    error
 		status int
 		code   string
-	}{{service.ErrChatNotFound, 404, "chat_not_found"}, {service.ErrMemberNotFound, 404, "member_not_found"}, {service.ErrNotAdmin, 403, "forbidden"}, {service.ErrAlreadyMember, 409, "already_member"}, {service.ErrInvalidTitle, 400, "invalid_title"}, {service.ErrCannotModifyDirect, 400, "cannot_modify_direct"}, {errors.New("secret database details"), 500, "internal_error"}} {
+	}{{service.ErrChatNotFound, 404, "chat_not_found"}, {service.ErrMemberNotFound, 404, "member_not_found"}, {service.ErrMessageNotFound, 404, "message_not_found"}, {service.ErrInvalidMessageID, 400, "invalid_message_id"}, {service.ErrNotAdmin, 403, "forbidden"}, {service.ErrAlreadyMember, 409, "already_member"}, {service.ErrInvalidTitle, 400, "invalid_title"}, {service.ErrCannotModifyDirect, 400, "cannot_modify_direct"}, {errors.New("secret database details"), 500, "internal_error"}} {
 		t.Run(tc.code, func(t *testing.T) {
 			repo := &httpChatRepo{err: tc.err}
 			handler, token := chatTestHandler(t, repo)
@@ -194,6 +214,8 @@ func TestChatHTTPInputErrors(t *testing.T) {
 	}{
 		{"GET", "/api/v1/chats/hello", "", 400, "invalid_id"},
 		{"GET", "/api/v1/chats/hello/members", "", 400, "invalid_id"},
+		{"POST", "/api/v1/chats/hello/read", `{"message_id":7}`, 400, "invalid_id"},
+		{"POST", chat + "/read", `{"message_id":0}`, 400, "invalid_message_id"},
 		{"POST", chat + "/members/hello", "", 400, "invalid_id"},
 		{"DELETE", chat + "/members/hello", "", 400, "invalid_id"},
 		{"POST", "/api/v1/chats/direct", `{"user2_id":"hello"}`, 400, "invalid_id"},
@@ -223,7 +245,7 @@ func TestChatResponseJSON(t *testing.T) {
 		value any
 		keys  []string
 	}{
-		{model.Chat{}, []string{"id", "type", "title", "created_by", "created_at"}},
+		{model.Chat{}, []string{"id", "type", "title", "created_by", "created_at", "unread_count"}},
 		{model.ChatMember{}, []string{"chat_id", "user_id", "role", "joined_at"}},
 	} {
 		rec := httptest.NewRecorder()

@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 )
 
 type MessageRepositoryInterface interface {
@@ -35,13 +36,22 @@ type MessageRepositoryInterface interface {
 type MessageService struct {
 	msgRepo     MessageRepositoryInterface
 	chatService ChatService
+	limiter     *MessageRateLimiter
 }
 
 func NewMessageService(
 	msgRepo MessageRepositoryInterface,
 	chatService ChatService,
 ) *MessageService {
-	return &MessageService{msgRepo: msgRepo, chatService: chatService}
+	return NewMessageServiceWithLimiter(msgRepo, chatService, NewMessageRateLimiter())
+}
+
+func NewMessageServiceWithLimiter(
+	msgRepo MessageRepositoryInterface,
+	chatService ChatService,
+	limiter *MessageRateLimiter,
+) *MessageService {
+	return &MessageService{msgRepo: msgRepo, chatService: chatService, limiter: limiter}
 }
 
 func (s *MessageService) Send(ctx context.Context, senderID, chatID string, req model.CreateMessageRequest) (*model.Message, error) {
@@ -51,6 +61,10 @@ func (s *MessageService) Send(ctx context.Context, senderID, chatID string, req 
 
 	if utf8.RuneCountInString(req.Content) > 4000 {
 		return nil, ErrMessageTooLong
+	}
+
+	if !s.limiter.Allow(senderID) {
+		return nil, ErrRateLimited
 	}
 
 	if _, err := s.chatService.GetChatByID(ctx, senderID, chatID); err != nil {
@@ -120,4 +134,5 @@ var (
 	ErrInvalidLimit     = errors.New("invalid limit")
 	ErrInvalidCursor    = errors.New("invalid cursor")
 	ErrEmptySearchQuery = errors.New("search query cannot be empty")
+	ErrRateLimited      = errors.New("too many messages")
 )

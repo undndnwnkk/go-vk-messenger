@@ -18,6 +18,13 @@ type chatRepoStub struct {
 	memberErr    error
 	accessErr    error
 	mutationErr  error
+	readState    *model.ChatReadState
+	readAdvanced bool
+	readErr      error
+	readCalled   bool
+	readChatID   string
+	readUserID   string
+	readMessage  int64
 	added        bool
 	removed      bool
 	listed       bool
@@ -50,6 +57,16 @@ func (r *chatRepoStub) AddMember(_ context.Context, chatID, userID string, role 
 func (r *chatRepoStub) RemoveMember(context.Context, string, string) error {
 	r.removed = true
 	return r.mutationErr
+}
+func (r *chatRepoStub) MarkRead(_ context.Context, chatID string, userID string, messageID int64) (*model.ChatReadState, bool, error) {
+	r.readCalled = true
+	r.readChatID = chatID
+	r.readUserID = userID
+	r.readMessage = messageID
+	if r.readState == nil {
+		r.readState = &model.ChatReadState{ChatID: chatID, UserID: userID, LastReadMessageID: messageID}
+	}
+	return r.readState, r.readAdvanced, r.readErr
 }
 func (r *chatRepoStub) GetOrCreateDirect(context.Context, string, string) (*model.Chat, error) {
 	r.direct = true
@@ -143,6 +160,42 @@ func TestChatServiceMembersAccess(t *testing.T) {
 		if repo.listed != (accessErr == nil) {
 			t.Fatalf("listed=%v", repo.listed)
 		}
+	}
+}
+
+func TestChatServiceMarkRead(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		userID   string
+		chatID   string
+		message  int64
+		repoErr  error
+		want     error
+		called   bool
+		advanced bool
+	}{
+		{"Success", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, nil, nil, true, true},
+		{"Stale", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, nil, nil, true, false},
+		{"ZeroMessage", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 0, nil, ErrInvalidMessageID, false, false},
+		{"InvalidUser", "hello", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, nil, ErrInvalidID, false, false},
+		{"InvalidChat", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "hello", 7, nil, ErrInvalidID, false, false},
+		{"Outsider", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, repository.ErrMemberNotFound, ErrMemberNotFound, true, false},
+		{"WrongMessage", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, repository.ErrMessageNotFound, ErrMessageNotFound, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &chatRepoStub{readAdvanced: tc.advanced, readErr: tc.repoErr}
+			svc := NewChatService(repo, UserService{})
+			state, advanced, err := svc.MarkRead(context.Background(), tc.userID, tc.chatID, tc.message)
+			if !errors.Is(err, tc.want) || repo.readCalled != tc.called || advanced != (tc.want == nil && tc.advanced) {
+				t.Fatalf("err=%v called=%v advanced=%v", err, repo.readCalled, advanced)
+			}
+			if tc.want != nil {
+				return
+			}
+			if state.ChatID != tc.chatID || state.UserID != tc.userID || state.LastReadMessageID != tc.message || repo.readChatID != tc.chatID || repo.readUserID != tc.userID || repo.readMessage != tc.message {
+				t.Fatalf("state=%+v repo=%+v", state, repo)
+			}
+		})
 	}
 }
 

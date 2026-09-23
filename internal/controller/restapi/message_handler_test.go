@@ -49,10 +49,15 @@ func (r *httpMessageRepo) Search(_ context.Context, chat, query string, limit in
 }
 func messageHTTPHandler(t *testing.T, repo *httpMessageRepo, accessErr error) (http.Handler, string) {
 	t.Helper()
+	return messageHTTPHandlerWithLimiter(t, repo, accessErr, service.NewMessageRateLimiter())
+}
+
+func messageHTTPHandlerWithLimiter(t *testing.T, repo *httpMessageRepo, accessErr error, limiter *service.MessageRateLimiter) (http.Handler, string) {
+	t.Helper()
 	jwt := service.NewJWTService("message-test", time.Minute)
 	user := service.NewUserService(newFakeUserRepo(), jwt)
 	chat := service.NewChatService(&httpChatRepo{err: accessErr}, *user)
-	message := service.NewMessageService(repo, *chat)
+	message := service.NewMessageServiceWithLimiter(repo, *chat, limiter)
 	token, err := jwt.GenerateToken(httpMessageUser)
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +280,33 @@ func TestMessageHTTPInputErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestMessageHTTPRateLimitDoesNotCreateOrBroadcast(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := service.NewMessageRateLimiterWithClock(func() time.Time { return now })
+	repo := &httpMessageRepo{}
+	h, token := messageHTTPHandlerWithLimiter(t, repo, nil, limiter)
+
+	for i := 0; i < service.MessageRateLimitCount; i++ {
+		rec := messageHTTPRequest(h, token, "POST", httpMessagePath, `{"content":"hello"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("send %d status=%d body=%s", i, rec.Code, rec.Body)
+		}
+	}
+	repo.called = false
+	rec := messageHTTPRequest(h, token, "POST", httpMessagePath, `{"content":"hello"}`)
+	assertMessageHTTPError(t, rec, http.StatusTooManyRequests, "rate_limited")
+	if repo.called {
+		t.Fatal("rate-limited request reached message repository")
+	}
+
+	now = now.Add(service.MessageRateLimitWindow + time.Millisecond)
+	rec = messageHTTPRequest(h, token, "POST", httpMessagePath, `{"content":"hello"}`)
+	if rec.Code != http.StatusCreated || !repo.called {
+		t.Fatalf("send after window status=%d called=%v body=%s", rec.Code, repo.called, rec.Body)
+	}
+}
+
 func assertMessageHTTPError(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
 	t.Helper()
 	var result struct {

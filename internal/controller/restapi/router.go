@@ -46,6 +46,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 
 				r.Get("/", h.getChatsHandler)
 				r.Get("/{chatID}", h.getChatByIDHandler)
+				r.Post("/{chatID}/read", h.markChatReadHandler)
 
 				r.Get("/{chatID}/members", h.getChatMembersHandler)
 				r.Route("/{chatID}/members", func(r chi.Router) {
@@ -124,6 +125,10 @@ func publicError(err error) (int, string, string) {
 		return http.StatusBadRequest, "invalid_cursor", service.ErrInvalidCursor.Error()
 	case errors.Is(err, service.ErrEmptySearchQuery):
 		return http.StatusBadRequest, "empty_search_query", service.ErrEmptySearchQuery.Error()
+	case errors.Is(err, service.ErrRateLimited):
+		return http.StatusTooManyRequests, "rate_limited", service.ErrRateLimited.Error()
+	case errors.Is(err, service.ErrInvalidMessageID):
+		return http.StatusBadRequest, "invalid_message_id", service.ErrInvalidMessageID.Error()
 	case errors.Is(err, service.ErrInvalidID):
 		return http.StatusBadRequest, "invalid_id", service.ErrInvalidID.Error()
 	case errors.Is(err, service.ErrTargetUserNotFound):
@@ -132,6 +137,8 @@ func publicError(err error) (int, string, string) {
 		return http.StatusConflict, "cannot_remove_self", service.ErrCannotRemoveSelf.Error()
 	case errors.Is(err, service.ErrChatNotFound):
 		return http.StatusNotFound, "chat_not_found", service.ErrChatNotFound.Error()
+	case errors.Is(err, service.ErrMessageNotFound):
+		return http.StatusNotFound, "message_not_found", service.ErrMessageNotFound.Error()
 	case errors.Is(err, service.ErrMemberNotFound):
 		return http.StatusNotFound, "member_not_found", service.ErrMemberNotFound.Error()
 	case errors.Is(err, service.ErrNotAdmin):

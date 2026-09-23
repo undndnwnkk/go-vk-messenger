@@ -158,6 +158,104 @@ func TestWebSocketSendMessageRepositoryErrorDoesNotBroadcast(t *testing.T) {
 	assertNoWebSocketMessage(t, bob)
 }
 
+func TestWebSocketSendMessageUsesSharedRateLimitAndDoesNotBroadcastWhenLimited(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := service.NewMessageRateLimiterWithClock(func() time.Time { return now })
+	repo := &httpMessageRepo{}
+	chatRepo := &httpChatRepo{members: []model.ChatMember{
+		{ChatID: httpMessageChat, UserID: httpMessageUser},
+		{ChatID: httpMessageChat, UserID: wsMessageBob},
+	}}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChatAndLimiter(t, repo, chatRepo, hub, limiter)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+
+	aliceToken := generateWebSocketToken(t, jwt, httpMessageUser)
+	for i := 0; i < service.MessageRateLimitCount; i++ {
+		resp := postMessageToServer(t, ctx, server, aliceToken, `{"content":"hello"}`)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("REST send %d status=%d", i, resp.StatusCode)
+		}
+		resp.Body.Close()
+		readMessageCreated(t, ctx, bob)
+	}
+	repo.called = false
+
+	alice := dialWebSocket(t, ctx, server.URL, aliceToken)
+	defer alice.CloseNow()
+	waitForConnectionCount(t, ctx, hub, httpMessageUser, 1)
+
+	writeTextMessage(t, ctx, alice, `{
+		"type":"send_message",
+		"data":{
+			"chat_id":"`+httpMessageChat+`",
+			"content":"hello"
+		}
+	}`)
+
+	assertWebSocketEvent(t, ctx, alice, "error", "rate_limited")
+	if repo.called {
+		t.Fatal("rate-limited websocket message reached repository")
+	}
+	assertNoWebSocketMessage(t, bob)
+}
+
+func TestMarkReadBroadcastsReadUpdatedToOtherOnlineMembers(t *testing.T) {
+	repo := &httpMessageRepo{}
+	chatRepo := &httpChatRepo{
+		members: []model.ChatMember{
+			{ChatID: httpMessageChat, UserID: httpMessageUser},
+			{ChatID: httpMessageChat, UserID: wsMessageBob},
+		},
+		readAdvanced: true,
+	}
+	hub := realtime.NewHub()
+	handler, jwt := webSocketMessageHandlerWithChat(t, repo, chatRepo, hub)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, httpMessageUser))
+	defer alice.CloseNow()
+	bob := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageBob))
+	defer bob.CloseNow()
+	carol := dialWebSocket(t, ctx, server.URL, generateWebSocketToken(t, jwt, wsMessageCarol))
+	defer carol.CloseNow()
+
+	waitForConnectionCount(t, ctx, hub, httpMessageUser, 1)
+	waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
+	waitForConnectionCount(t, ctx, hub, wsMessageCarol, 1)
+
+	resp := postReadToServer(t, ctx, server, generateWebSocketToken(t, jwt, httpMessageUser), `{"message_id":7}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("mark read status=%d", resp.StatusCode)
+	}
+
+	updated := readReadUpdated(t, ctx, bob)
+	if updated.ChatID != httpMessageChat || updated.UserID != httpMessageUser || updated.LastReadMessageID != 7 {
+		t.Fatalf("read_updated data = %+v", updated)
+	}
+	assertNoWebSocketMessage(t, alice)
+	assertNoWebSocketMessage(t, carol)
+
+	chatRepo.readAdvanced = false
+	resp = postReadToServer(t, ctx, server, generateWebSocketToken(t, jwt, httpMessageUser), `{"message_id":7}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stale mark read status=%d", resp.StatusCode)
+	}
+	assertNoWebSocketMessage(t, bob)
+}
+
 func TestWebSocketSendMessageNotifierErrorKeepsAck(t *testing.T) {
 	repo := &httpMessageRepo{}
 	chatRepo := &httpChatRepo{
@@ -240,11 +338,16 @@ func webSocketMessageHandler(t *testing.T, repo *httpMessageRepo, accessErr erro
 
 func webSocketMessageHandlerWithChat(t *testing.T, repo *httpMessageRepo, chatRepo *httpChatRepo, hub *realtime.Hub) (http.Handler, *service.JWTService) {
 	t.Helper()
+	return webSocketMessageHandlerWithChatAndLimiter(t, repo, chatRepo, hub, service.NewMessageRateLimiter())
+}
+
+func webSocketMessageHandlerWithChatAndLimiter(t *testing.T, repo *httpMessageRepo, chatRepo *httpChatRepo, hub *realtime.Hub, limiter *service.MessageRateLimiter) (http.Handler, *service.JWTService) {
+	t.Helper()
 
 	jwt := service.NewJWTService("ws-message-test", time.Minute)
 	user := service.NewUserService(newFakeUserRepo(), jwt)
 	chat := service.NewChatService(chatRepo, *user)
-	message := service.NewMessageService(repo, *chat)
+	message := service.NewMessageServiceWithLimiter(repo, *chat, limiter)
 
 	return NewHandler(*user, jwt, fakeHealthChecker{}, *chat, *message, hub), jwt
 }
@@ -288,6 +391,31 @@ func readMessageCreated(t *testing.T, ctx context.Context, conn *websocket.Conn)
 	return readMessageEvent(t, ctx, conn, realtime.EventMessageCreated)
 }
 
+func readReadUpdated(t *testing.T, ctx context.Context, conn *websocket.Conn) model.ChatReadState {
+	t.Helper()
+
+	msgType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read %s: %v", realtime.EventReadUpdated, err)
+	}
+	if msgType != websocket.MessageText {
+		t.Fatalf("message type = %v, want %v", msgType, websocket.MessageText)
+	}
+
+	var event struct {
+		Type string              `json:"type"`
+		Data model.ChatReadState `json:"data"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		t.Fatalf("decode %s %q: %v", realtime.EventReadUpdated, data, err)
+	}
+	if event.Type != string(realtime.EventReadUpdated) {
+		t.Fatalf("event type = %q, want %q; body: %s", event.Type, realtime.EventReadUpdated, data)
+	}
+
+	return event.Data
+}
+
 func readMessageEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, eventType realtime.EventType) model.Message {
 	t.Helper()
 
@@ -325,4 +453,20 @@ func assertNoWebSocketMessage(t *testing.T, conn *websocket.Conn) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("read unexpected error = %v, want deadline exceeded", err)
 	}
+}
+
+func postReadToServer(t *testing.T, ctx context.Context, server *httptest.Server, token, body string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/api/v1/chats/"+httpMessageChat+"/read", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }

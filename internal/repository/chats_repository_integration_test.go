@@ -220,6 +220,86 @@ func TestChatRepositoryPostgres(t *testing.T) {
 			}
 		}
 	})
+	t.Run("ReadStatus", func(t *testing.T) {
+		messages := NewMessageRepository(pool)
+		own, err := messages.Create(ctx, group.ID, users[0], "own")
+		if err != nil {
+			t.Fatal(err)
+		}
+		incoming, err := messages.Create(ctx, group.ID, users[1], "incoming")
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherChat, err := repo.CreateGroup(ctx, users[0], "Other", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, err := messages.Create(ctx, otherChat.ID, users[0], "other chat")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		chats, err := repo.ListByUser(ctx, users[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var groupListItem *model.Chat
+		for i := range chats {
+			if chats[i].ID == group.ID {
+				groupListItem = &chats[i]
+				break
+			}
+		}
+		if groupListItem == nil {
+			t.Fatal("group not listed")
+		}
+		if groupListItem.UnreadCount != 1 {
+			t.Fatalf("unread count before read = %d, want 1", groupListItem.UnreadCount)
+		}
+
+		state, advanced, err := repo.MarkRead(ctx, group.ID, users[0], incoming.ID)
+		if err != nil || !advanced || state.ChatID != group.ID || state.UserID != users[0] || state.LastReadMessageID != incoming.ID {
+			t.Fatalf("mark read state=%+v advanced=%v err=%v", state, advanced, err)
+		}
+		state, advanced, err = repo.MarkRead(ctx, group.ID, users[0], own.ID)
+		if err != nil || advanced || state.LastReadMessageID != incoming.ID {
+			t.Fatalf("stale mark read state=%+v advanced=%v err=%v", state, advanced, err)
+		}
+		if _, _, err := repo.MarkRead(ctx, group.ID, users[0], other.ID); !errors.Is(err, ErrMessageNotFound) {
+			t.Fatalf("wrong-chat message err=%v", err)
+		}
+		if _, _, err := repo.MarkRead(ctx, group.ID, users[3], incoming.ID); !errors.Is(err, ErrMemberNotFound) {
+			t.Fatalf("outsider err=%v", err)
+		}
+
+		chats, err = repo.ListByUser(ctx, users[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range chats {
+			if chats[i].ID == group.ID {
+				groupListItem = &chats[i]
+				break
+			}
+		}
+		if groupListItem.UnreadCount != 0 || groupListItem.LastReadMessageID == nil || *groupListItem.LastReadMessageID != incoming.ID {
+			t.Fatalf("list read state after read = %+v", groupListItem)
+		}
+
+		if err := repo.AddMember(ctx, group.ID, users[3], model.Member); err != nil {
+			t.Fatal(err)
+		}
+		member, err := repo.GetMember(ctx, group.ID, users[3])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.LastReadMessageID == nil || *member.LastReadMessageID != incoming.ID {
+			t.Fatalf("new member read state = %+v, want %d", member, incoming.ID)
+		}
+		if err := repo.RemoveMember(ctx, group.ID, users[3]); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("MembershipErrors", func(t *testing.T) {
 		if err := repo.RemoveMember(ctx, group.ID, users[3]); !errors.Is(err, ErrMemberNotFound) {
 			t.Fatal(err)

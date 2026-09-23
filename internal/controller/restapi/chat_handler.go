@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -98,6 +99,33 @@ func (h *Handler) getChatMembersHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	WriteJSON(w, http.StatusOK, members)
+}
+
+func (h *Handler) markChatReadHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	var req model.MarkReadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+
+	state, advanced, err := h.chat.MarkRead(r.Context(), userID, chi.URLParam(r, "chatID"), req.MessageID)
+	if err != nil {
+		WriteServiceError(w, err)
+		return
+	}
+	if advanced {
+		if err := h.notifier.NotifyReadUpdated(r.Context(), userID, state); err != nil {
+			log.Printf("read updated broadcast failed: %v", err)
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, state)
 }
 
 func (h *Handler) addChatMemberHandler(w http.ResponseWriter, r *http.Request) {

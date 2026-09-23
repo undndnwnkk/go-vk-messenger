@@ -64,6 +64,13 @@ type ChatRepositoryInterface interface {
 		chatID string,
 		userID string,
 	) error
+
+	MarkRead(
+		ctx context.Context,
+		chatID string,
+		userID string,
+		messageID int64,
+	) (*model.ChatReadState, bool, error)
 }
 
 type ChatService struct {
@@ -167,6 +174,20 @@ func (s *ChatService) GetMembersByChatID(ctx context.Context, currentUserID, cha
 	return members, nil
 }
 
+func (s *ChatService) MarkRead(ctx context.Context, userID, chatID string, messageID int64) (*model.ChatReadState, bool, error) {
+	if messageID <= 0 {
+		return nil, false, ErrInvalidMessageID
+	}
+	if err := normalizeChatIDs(&userID, &chatID); err != nil {
+		return nil, false, err
+	}
+	state, advanced, err := s.repo.MarkRead(ctx, chatID, userID, messageID)
+	if err != nil {
+		return nil, false, chatRepoError(err)
+	}
+	return state, advanced, nil
+}
+
 func (s *ChatService) requireGroupAdmin(ctx context.Context, currentUserID, chatID string) error {
 	chat, err := s.repo.GetByID(ctx, chatID)
 	if err != nil {
@@ -246,6 +267,8 @@ func chatRepoError(err error) error {
 		return ErrMemberNotFound
 	case errors.Is(err, repository.ErrMemberAlreadyExists):
 		return ErrAlreadyMember
+	case errors.Is(err, repository.ErrMessageNotFound):
+		return ErrMessageNotFound
 	default:
 		return err
 	}
@@ -257,6 +280,8 @@ var (
 	ErrCannotRemoveSelf   = errors.New("cannot remove yourself from the group")
 	ErrChatNotFound       = errors.New("chat not found")
 	ErrMemberNotFound     = errors.New("member not found")
+	ErrMessageNotFound    = errors.New("message not found")
+	ErrInvalidMessageID   = errors.New("invalid message id")
 	ErrAlreadyMember      = errors.New("member already exists")
 	ErrCannotModifyDirect = errors.New("cannot modify direct chat members")
 	ErrCommonUser         = errors.New("chat must be with different users")

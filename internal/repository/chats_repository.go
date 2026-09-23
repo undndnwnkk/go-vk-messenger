@@ -161,7 +161,7 @@ func (r *ChatRepository) ListByUser(
 	defer rows.Close()
 	for rows.Next() {
 		var chat model.Chat
-		if err := rows.Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt); err != nil {
+		if err := rows.Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.LastReadMessageID, &chat.UnreadCount); err != nil {
 			return nil, fmt.Errorf("chat repository: %w", err)
 		}
 
@@ -181,7 +181,7 @@ func (r *ChatRepository) GetMember(
 ) (*model.ChatMember, error) {
 	var member model.ChatMember
 
-	if err := r.db.QueryRow(ctx, getChatMemberQuery, chatID, userID).Scan(&member.ChatID, &member.UserID, &member.Role, &member.JoinedAt); err != nil {
+	if err := r.db.QueryRow(ctx, getChatMemberQuery, chatID, userID).Scan(&member.ChatID, &member.UserID, &member.Role, &member.JoinedAt, &member.LastReadMessageID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMemberNotFound
 		}
@@ -206,7 +206,7 @@ func (r *ChatRepository) ListMembers(
 	for rows.Next() {
 		var m model.ChatMember
 
-		if err := rows.Scan(&m.ChatID, &m.UserID, &m.Role, &m.JoinedAt); err != nil {
+		if err := rows.Scan(&m.ChatID, &m.UserID, &m.Role, &m.JoinedAt, &m.LastReadMessageID); err != nil {
 			return nil, fmt.Errorf("chat repository: %w", err)
 		}
 
@@ -225,7 +225,7 @@ func (r *ChatRepository) AddMember(
 	userID string,
 	role model.ChatRole,
 ) error {
-	if _, err := r.db.Exec(ctx, insertMemberQuery, chatID, userID, role); err != nil {
+	if _, err := r.db.Exec(ctx, insertMemberAtCurrentReadQuery, chatID, userID, role); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "chat_members_pkey" {
 			return ErrMemberAlreadyExists
@@ -233,6 +233,42 @@ func (r *ChatRepository) AddMember(
 		return fmt.Errorf("add member: %w", err)
 	}
 	return nil
+}
+
+func (r *ChatRepository) MarkRead(ctx context.Context, chatID, userID string, messageID int64) (*model.ChatReadState, bool, error) {
+	var state model.ChatReadState
+	err := r.db.QueryRow(ctx, advanceReadQuery, chatID, userID, messageID).Scan(&state.ChatID, &state.UserID, &state.LastReadMessageID)
+	if err == nil {
+		return &state, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, fmt.Errorf("mark read: %w", err)
+	}
+
+	var currentLastRead *int64
+	if err := r.db.QueryRow(ctx, getReadStateQuery, chatID, userID).Scan(&state.ChatID, &state.UserID, &currentLastRead); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, ErrMemberNotFound
+		}
+		return nil, false, fmt.Errorf("read state: %w", err)
+	}
+
+	var messageChatID string
+	if err := r.db.QueryRow(ctx, getMessageChatIDQuery, messageID).Scan(&messageChatID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, ErrMessageNotFound
+		}
+		return nil, false, fmt.Errorf("read message chat: %w", err)
+	}
+	if messageChatID != chatID {
+		return nil, false, ErrMessageNotFound
+	}
+
+	if currentLastRead == nil {
+		return nil, false, ErrMessageNotFound
+	}
+	state.LastReadMessageID = *currentLastRead
+	return &state, false, nil
 }
 
 func (r *ChatRepository) RemoveMember(
@@ -263,8 +299,12 @@ var (
 	ErrMemberNotFound      = errors.New("member not found")
 	ErrMemberAlreadyExists = errors.New("member already exists")
 	ErrChatNotFound        = errors.New("chat not found")
+	ErrMessageNotFound     = errors.New("message not found")
 	// queries
-	insertMemberQuery            = "INSERT INTO chat_members(chat_id, user_id, role) VALUES ($1, $2, $3)"
+	insertMemberQuery              = "INSERT INTO chat_members(chat_id, user_id, role) VALUES ($1, $2, $3)"
+	insertMemberAtCurrentReadQuery = `
+ INSERT INTO chat_members(chat_id, user_id, role, last_read_message_id)
+ VALUES ($1, $2, $3, (SELECT max(id) FROM messages WHERE chat_id = $1))`
 	insertChatQuery              = "INSERT INTO chats (type, title, created_by) VALUES ($1, $2, $3) RETURNING id"
 	insertChatQueryFullReturning = "INSERT INTO chats (type, title, created_by) VALUES ($1, $2, $3) RETURNING id, type, title, created_by, created_at"
 	getChatByIDQuery             = "SELECT id, type, title, created_by, created_at FROM chats WHERE id = $1"
@@ -275,12 +315,31 @@ var (
  FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
  WHERE c.id = $1 AND cm.user_id = $2`
 	getChatsByUserIDQuery = `
- SELECT c.id, c.type, c.title, c.created_by, c.created_at
+ SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id,
+        count(m.id) AS unread_count
  FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
- WHERE cm.user_id = $1 ORDER BY c.created_at DESC`
+ LEFT JOIN messages m ON m.chat_id = c.id
+      AND m.sender_id <> $1
+      AND (cm.last_read_message_id IS NULL OR m.id > cm.last_read_message_id)
+ WHERE cm.user_id = $1
+ GROUP BY c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id
+ ORDER BY c.created_at DESC`
 	getChatMemberQuery = `
-		SELECT chat_id, user_id, role, joined_at FROM chat_members WHERE chat_id = $1 AND user_id = $2
+		SELECT chat_id, user_id, role, joined_at, last_read_message_id FROM chat_members WHERE chat_id = $1 AND user_id = $2
 	`
-	getChatMembersQuery = "SELECT chat_id, user_id, role, joined_at FROM chat_members WHERE chat_id = $1"
+	getChatMembersQuery = "SELECT chat_id, user_id, role, joined_at, last_read_message_id FROM chat_members WHERE chat_id = $1"
 	deleteMemberQuery   = "DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2"
+	advanceReadQuery    = `
+ UPDATE chat_members
+ SET last_read_message_id = $3
+ WHERE chat_id = $1
+   AND user_id = $2
+   AND EXISTS (SELECT 1 FROM messages WHERE id = $3 AND chat_id = $1)
+   AND (last_read_message_id IS NULL OR last_read_message_id < $3)
+ RETURNING chat_id, user_id, last_read_message_id`
+	getReadStateQuery = `
+ SELECT chat_id, user_id, last_read_message_id
+ FROM chat_members
+ WHERE chat_id = $1 AND user_id = $2`
+	getMessageChatIDQuery = "SELECT chat_id FROM messages WHERE id = $1"
 )

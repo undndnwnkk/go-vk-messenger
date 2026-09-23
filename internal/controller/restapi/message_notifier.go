@@ -30,3 +30,20 @@ func (n *MessageNotifier) NotifyMessageCreated(ctx context.Context, currentUserI
 	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(realtime.EventMessageCreated, msg))
 	return nil
 }
+
+func (n *MessageNotifier) NotifyReadUpdated(ctx context.Context, currentUserID string, state *model.ChatReadState) error {
+	members, err := n.chat.GetMembersByChatID(ctx, currentUserID, state.ChatID)
+	if err != nil {
+		return err
+	}
+
+	userIDs := make([]string, 0, len(members))
+	for _, member := range members {
+		if member.UserID == currentUserID {
+			continue
+		}
+		userIDs = append(userIDs, member.UserID)
+	}
+	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(realtime.EventReadUpdated, state))
+	return nil
+}
