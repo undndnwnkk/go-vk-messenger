@@ -12,6 +12,7 @@ import (
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
+	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
@@ -237,6 +238,18 @@ func TestChatHTTPInputErrors(t *testing.T) {
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestMarkReadOutsiderLooksLikeChatNotFound(t *testing.T) {
+	repo := &httpChatRepo{readErr: repository.ErrMemberNotFound}
+	handler, token := chatTestHandler(t, repo)
+	req := httptest.NewRequest("POST", "/api/v1/chats/cccccccc-cccc-4ccc-8ccc-cccccccccccc/read", strings.NewReader(`{"message_id":7}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"code":"chat_not_found"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

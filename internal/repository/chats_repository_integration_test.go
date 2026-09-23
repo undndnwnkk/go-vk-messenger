@@ -296,8 +296,90 @@ func TestChatRepositoryPostgres(t *testing.T) {
 		if member.LastReadMessageID == nil || *member.LastReadMessageID != incoming.ID {
 			t.Fatalf("new member read state = %+v, want %d", member, incoming.ID)
 		}
+		chats, err = repo.ListByUser(ctx, users[3])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bobGroup *model.Chat
+		for i := range chats {
+			if chats[i].ID == group.ID {
+				bobGroup = &chats[i]
+				break
+			}
+		}
+		if bobGroup == nil {
+			t.Fatal("new member group not listed")
+		}
+		if bobGroup.UnreadCount != 0 {
+			t.Fatalf("new member unread count before new message = %d, want 0", bobGroup.UnreadCount)
+		}
+		next, err := messages.Create(ctx, group.ID, users[0], "new after add")
+		if err != nil {
+			t.Fatal(err)
+		}
+		chats, err = repo.ListByUser(ctx, users[3])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range chats {
+			if chats[i].ID == group.ID {
+				bobGroup = &chats[i]
+				break
+			}
+		}
+		if bobGroup.UnreadCount != 1 {
+			t.Fatalf("new member unread count after new message = %d, want 1", bobGroup.UnreadCount)
+		}
+		if bobGroup.LastReadMessageID == nil || *bobGroup.LastReadMessageID != incoming.ID || next.ID <= incoming.ID {
+			t.Fatalf("new member list state = %+v, incoming=%d next=%d", bobGroup, incoming.ID, next.ID)
+		}
 		if err := repo.RemoveMember(ctx, group.ID, users[3]); err != nil {
 			t.Fatal(err)
+		}
+	})
+	t.Run("MarkReadConcurrentMovesOnlyForward", func(t *testing.T) {
+		messages := NewMessageRepository(pool)
+		concurrentChat, err := repo.CreateGroup(ctx, users[0], "Concurrent read", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ids := make([]int64, 300)
+		for i := range ids {
+			msg, err := messages.Create(ctx, concurrentChat.ID, users[1], fmt.Sprintf("message %d", i+1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids[i] = msg.ID
+		}
+
+		start := make(chan struct{})
+		errs := make(chan error, 3)
+		var wg sync.WaitGroup
+		for _, messageID := range []int64{ids[99], ids[299], ids[199]} {
+			wg.Add(1)
+			go func(messageID int64) {
+				defer wg.Done()
+				<-start
+				_, _, err := repo.MarkRead(ctx, concurrentChat.ID, users[0], messageID)
+				errs <- err
+			}(messageID)
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		member, err := repo.GetMember(ctx, concurrentChat.ID, users[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.LastReadMessageID == nil || *member.LastReadMessageID != ids[299] {
+			t.Fatalf("final last_read_message_id = %v, want %d", member.LastReadMessageID, ids[299])
 		}
 	})
 	t.Run("MembershipErrors", func(t *testing.T) {

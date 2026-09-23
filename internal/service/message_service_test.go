@@ -5,6 +5,8 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -185,6 +187,72 @@ func TestMessageSendRateLimit(t *testing.T) {
 	}
 	if repo.createCount != MessageRateLimitCount+1 {
 		t.Fatalf("repository creates after window = %d", repo.createCount)
+	}
+}
+
+func TestMessageSendRateLimitIsPerUser(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := NewMessageRateLimiterWithClock(func() time.Time { return now })
+	repo := &messageRepoStub{}
+	svc := NewMessageServiceWithLimiter(repo, *NewChatService(&chatRepoStub{}, UserService{}), limiter)
+
+	for i := 0; i < MessageRateLimitCount; i++ {
+		if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); err != nil {
+			t.Fatalf("alice send %d: %v", i, err)
+		}
+	}
+	if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("alice after limit error = %v, want rate limited", err)
+	}
+
+	const bob = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	if _, err := svc.Send(context.Background(), bob, messageChat, model.CreateMessageRequest{Content: "hello"}); err != nil {
+		t.Fatalf("bob should not inherit alice limit: %v", err)
+	}
+}
+
+func TestMessageRateLimiterConcurrentAllow(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := NewMessageRateLimiterWithClock(func() time.Time { return now })
+	const attempts = 100
+
+	var allowed int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if limiter.Allow(messageUser) {
+				atomic.AddInt64(&allowed, 1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if allowed != MessageRateLimitCount {
+		t.Fatalf("allowed concurrent attempts = %d, want %d", allowed, MessageRateLimitCount)
+	}
+}
+
+func TestMessageSendRateLimitCountsFailedAccessAttempts(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	limiter := NewMessageRateLimiterWithClock(func() time.Time { return now })
+	repo := &messageRepoStub{}
+	svc := NewMessageServiceWithLimiter(repo, *NewChatService(&chatRepoStub{accessErr: repository.ErrChatNotFound}, UserService{}), limiter)
+
+	for i := 0; i < MessageRateLimitCount; i++ {
+		if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); !errors.Is(err, ErrChatNotFound) {
+			t.Fatalf("failed access attempt %d error = %v, want chat not found", i, err)
+		}
+	}
+	if _, err := svc.Send(context.Background(), messageUser, messageChat, model.CreateMessageRequest{Content: "hello"}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("after failed access attempts error = %v, want rate limited", err)
+	}
+	if repo.called {
+		t.Fatal("failed access attempts reached message repository")
 	}
 }
 

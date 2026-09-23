@@ -179,7 +179,7 @@ func TestChatServiceMarkRead(t *testing.T) {
 		{"ZeroMessage", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 0, nil, ErrInvalidMessageID, false, false},
 		{"InvalidUser", "hello", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, nil, ErrInvalidID, false, false},
 		{"InvalidChat", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "hello", 7, nil, ErrInvalidID, false, false},
-		{"Outsider", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, repository.ErrMemberNotFound, ErrMemberNotFound, true, false},
+		{"Outsider", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, repository.ErrMemberNotFound, ErrChatNotFound, true, false},
 		{"WrongMessage", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 7, repository.ErrMessageNotFound, ErrMessageNotFound, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

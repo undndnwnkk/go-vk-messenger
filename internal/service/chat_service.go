@@ -183,6 +183,9 @@ func (s *ChatService) MarkRead(ctx context.Context, userID, chatID string, messa
 	}
 	state, advanced, err := s.repo.MarkRead(ctx, chatID, userID, messageID)
 	if err != nil {
+		if errors.Is(err, repository.ErrMemberNotFound) {
+			return nil, false, ErrChatNotFound
+		}
 		return nil, false, chatRepoError(err)
 	}
 	return state, advanced, nil
