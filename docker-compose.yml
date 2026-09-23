@@ -1,15 +1,58 @@
 services:
   db:
-    container_name: messenger-db
     image: postgres:18-alpine
+    container_name: messenger-db
     environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-messenger_db}
     ports:
-      - "${DB_PORT}:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    container_name: messenger-migrate
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      MIGRATIONS_DIR: /migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    container_name: go-messenger-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      HTTP_PORT: ${HTTP_PORT:-8080}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
+    restart: unless-stopped
 
 volumes:
   postgres_data:
