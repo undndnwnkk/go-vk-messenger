@@ -399,6 +399,7 @@ func TestChatRepositoryPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("Mute", func(t *testing.T) { testChatMutePostgres(t, ctx, pool, users) })
 	for i := len(files) - 1; i >= 0; i-- {
 		data, err := os.ReadFile(files[i])
 		if err != nil {

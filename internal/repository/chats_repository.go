@@ -69,7 +69,7 @@ func (r *ChatRepository) GetOrCreateDirect(
 	userID1, userID2 = normalizeUserPair(userID1, userID2)
 	err := r.db.QueryRow(ctx, getChatIDFromDirectChat, userID1, userID2).Scan(&chatID)
 	if err == nil {
-		return r.GetByID(ctx, chatID)
+		return r.GetByIDForUser(ctx, chatID, originalCreatorID)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("find direct chat: %w", err)
@@ -95,7 +95,7 @@ func (r *ChatRepository) GetOrCreateDirect(
 			if err := r.db.QueryRow(ctx, getChatIDFromDirectChat, userID1, userID2).Scan(&chatID); err != nil {
 				return nil, fmt.Errorf("find winning direct chat: %w", err)
 			}
-			return r.GetByID(ctx, chatID)
+			return r.GetByIDForUser(ctx, chatID, originalCreatorID)
 		}
 		return nil, fmt.Errorf("insert direct chat: %w", err)
 	}
@@ -138,7 +138,7 @@ func (r *ChatRepository) GetByIDForUser(
 ) (*model.Chat, error) {
 	var chat model.Chat
 
-	if err := r.db.QueryRow(ctx, getByIDForUserQuery, chatID, userID).Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt); err != nil {
+	if err := r.db.QueryRow(ctx, getByIDForUserQuery, chatID, userID).Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.Muted, &chat.MuteVersion); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrChatNotFound
 		}
@@ -161,7 +161,7 @@ func (r *ChatRepository) ListByUser(
 	defer rows.Close()
 	for rows.Next() {
 		var chat model.Chat
-		if err := rows.Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.LastReadMessageID, &chat.UnreadCount); err != nil {
+		if err := rows.Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.LastReadMessageID, &chat.UnreadCount, &chat.Muted, &chat.MuteVersion); err != nil {
 			return nil, fmt.Errorf("chat repository: %w", err)
 		}
 
@@ -311,19 +311,19 @@ var (
 	insertDirectChatQuery        = "INSERT INTO direct_chats (chat_id, user1_id, user2_id) VALUES ($1, $2, $3)"
 	getChatIDFromDirectChat      = "SELECT chat_id FROM direct_chats WHERE user1_id = $1 AND user2_id = $2"
 	getByIDForUserQuery          = `
- SELECT c.id, c.type, c.title, c.created_by, c.created_at
+ SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.muted, cm.mute_version
  FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
  WHERE c.id = $1 AND cm.user_id = $2`
 	getChatsByUserIDQuery = `
  SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id,
-        count(m.id) AS unread_count
+        count(m.id) AS unread_count, cm.muted, cm.mute_version
  FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
  LEFT JOIN messages m ON m.chat_id = c.id
       AND m.deleted_at IS NULL
       AND m.sender_id <> $1
       AND (cm.last_read_message_id IS NULL OR m.id > cm.last_read_message_id)
  WHERE cm.user_id = $1
- GROUP BY c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id
+ GROUP BY c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id, cm.muted, cm.mute_version
  ORDER BY c.created_at DESC`
 	getChatMemberQuery = `
 		SELECT chat_id, user_id, role, joined_at, last_read_message_id FROM chat_members WHERE chat_id = $1 AND user_id = $2

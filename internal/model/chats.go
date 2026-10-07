@@ -22,6 +22,8 @@ type Chat struct {
 	CreatedAt         time.Time `db:"created_at" json:"created_at"`
 	LastReadMessageID *int64    `db:"last_read_message_id" json:"last_read_message_id,omitempty"`
 	UnreadCount       int64     `db:"unread_count" json:"unread_count"`
+	Muted             bool      `db:"muted" json:"muted"`
+	MuteVersion       int64     `db:"mute_version" json:"mute_version"`
 }
 
 type ChatMember struct {
@@ -55,4 +57,14 @@ type ChatReadState struct {
 	ChatID            string `json:"chat_id"`
 	UserID            string `json:"user_id"`
 	LastReadMessageID int64  `json:"last_read_message_id"`
+}
+
+type SetChatMuteRequest struct {
+	Muted *bool `json:"muted"`
+}
+
+type ChatMuteState struct {
+	ChatID  string `json:"chat_id"`
+	Muted   bool   `json:"muted"`
+	Version int64  `json:"mute_version"`
 }

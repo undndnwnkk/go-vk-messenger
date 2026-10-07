@@ -17,6 +17,7 @@ const (
 	EventMessageDeleted   EventType = "message_deleted"
 	EventReadUpdated      EventType = "read_updated"
 	EventReactionsUpdated EventType = "reactions_updated"
+	EventChatMuteUpdated  EventType = "chat_mute_updated"
 )
 
 type Event struct {

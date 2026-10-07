@@ -47,6 +47,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/", h.getChatsHandler)
 				r.Get("/{chatID}", h.getChatByIDHandler)
 				r.Post("/{chatID}/read", h.markChatReadHandler)
+				r.Patch("/{chatID}/mute", h.setChatMuteHandler)
 
 				r.Get("/{chatID}/members", h.getChatMembersHandler)
 				r.Route("/{chatID}/members", func(r chi.Router) {
