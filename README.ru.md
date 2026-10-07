@@ -115,7 +115,25 @@ chat_members.last_read_message_id
 message_reads(user_id, message_id)
 ```
 
-Redis/NATS сейчас не используется, потому что приложение single-instance. Если появится несколько Go instances, in-memory Hub понадобится заменить или дополнить external Pub/Sub.
+Redis Pub/Sub связывает локальные WebSocket Hub нескольких экземпляров приложения. Redis также обеспечивает общий лимит отправки: 10 сообщений на пользователя за скользящие 5 секунд. PostgreSQL остаётся источником данных. Без REDIS_URL работают прежние локальные Hub и limiter для одного экземпляра.
+
+## Redis, Kubernetes и мониторинг
+
+- Redis доставляет между репликами сообщения, изменения/удаления, реакции, read status и личный mute.
+- Kubernetes запускает две реплики приложения, PostgreSQL с PVC, Redis и отдельный Job миграций.
+- Prometheus собирает HTTP RPS/latency, WebSocket connections, ошибки публикации Redis и метрики Go/process.
+- Grafana автоматически получает дашборд **Messenger overview**, Prometheus — три правила алертов.
+- /live проверяет процесс; /ready и /health — PostgreSQL и настроенный Redis. Метрики работают на отдельном внутреннем listener.
+
+```bash
+docker compose --profile monitoring up -d --build
+```
+
+Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD из .env, демо-пароль messenger-demo). Prometheus: http://localhost:9091. Порты мониторинга привязаны к localhost, Redis не публикует порт на хост.
+
+Настройки: REDIS_URL (пустой локально, redis://redis:6379/0 в Compose), REDIS_PREFIX (messenger), METRICS_ADDR (127.0.0.1:9090 локально; :9090 в контейнерах). Всем репликам нужны одинаковые БД, префикс Redis и JWT secret. При отказе Redis readiness и отправка сообщений возвращают 503; пропущенные Pub/Sub события восстанавливаются через REST.
+
+[Подробная инструкция](docs/infrastructure.md): запуск в kind, порядок миграций, probes, метрики, smoke test двух реплик и порядок двух PR. Это учебный локальный стенд: PostgreSQL/Redis в одном экземпляре, хранилище мониторинга в Kubernetes временное.
 
 ## Структура проекта
 
@@ -208,7 +226,7 @@ make docker-logs
 make docker-down
 ```
 
-Docker Compose запускает три service: `db`, одноразовый `migrate` и `app`. App ждёт, пока PostgreSQL станет healthy и migrations успешно завершатся. Этот сценарий требует только Docker; локальные Go и make не нужны.
+Docker Compose запускает `db`, `redis`, одноразовый `migrate` и `app`. Приложение ждёт готовности PostgreSQL/Redis и успешных миграций. Профиль `monitoring` добавляет Prometheus и Grafana. Нужен только Docker; локальные Go и make не требуются.
 
 Если поменял database credentials, `migrate` service получает те же значения через compose variable substitution. Для уже запущенного окружения миграции можно повторно запустить явно:
 
@@ -349,6 +367,8 @@ Public endpoints:
 
 ```text
 GET  /health
+GET  /live
+GET  /ready
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 ```
