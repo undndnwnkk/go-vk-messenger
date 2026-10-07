@@ -3,14 +3,17 @@ package realtime
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 
 	"github.com/coder/websocket"
 )
 
 type Hub struct {
-	clients map[string]map[*Client]struct{}
-	mux     sync.RWMutex
-	publish func([]string, []byte) error
+	clients         map[string]map[*Client]struct{}
+	mux             sync.RWMutex
+	publish         func([]string, []byte) error
+	slowClients     atomic.Uint64
+	publishFailures atomic.Uint64
 }
 
 func NewHub() *Hub {
@@ -62,6 +65,7 @@ func (h *Hub) sendLocal(userID string, data []byte) {
 			continue
 		}
 		h.Unregister(client)
+		h.slowClients.Add(1)
 		client.Close(websocket.StatusPolicyViolation, "slow client")
 	}
 }
@@ -81,6 +85,7 @@ func (h *Hub) SendToUsers(userIDs []string, data []byte) {
 	h.mux.RUnlock()
 	if publish != nil && len(unique) > 0 {
 		if err := publish(unique, data); err != nil {
+			h.publishFailures.Add(1)
 			log.Printf("realtime publication failed; clients should reload history: %v", err)
 		}
 	}
@@ -92,6 +97,19 @@ func (h *Hub) Shutdown() {
 		client.Close(websocket.StatusNormalClosure, "server shutdown")
 	}
 }
+
+func (h *Hub) TotalConnections() float64 {
+	h.mux.RLock()
+	defer h.mux.RUnlock()
+	count := 0
+	for _, clients := range h.clients {
+		count += len(clients)
+	}
+	return float64(count)
+}
+
+func (h *Hub) SlowClients() float64     { return float64(h.slowClients.Load()) }
+func (h *Hub) PublishFailures() float64 { return float64(h.publishFailures.Load()) }
 
 func (h *Hub) clientsForUser(userID string) []*Client {
 	h.mux.RLock()

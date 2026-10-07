@@ -25,11 +25,16 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
-func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub) http.Handler {
+func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub, middleware ...func(http.Handler) http.Handler) http.Handler {
 	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub, notifier: NewMessageNotifier(chat, hub)}
 	r := chi.NewRouter()
+	r.Use(middleware...)
 
 	r.Get("/health", h.healthHandler)
+	r.Get("/ready", h.healthHandler)
+	r.Get("/live", func(w http.ResponseWriter, r *http.Request) {
+		WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", h.registerHandler)
@@ -75,7 +80,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
 	if err := h.health.Ping(r.Context()); err != nil {
 		log.Printf("health check failed: %v", err)
-		WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "database unavailable")
+		WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "dependency unavailable")
 		return
 	}
 

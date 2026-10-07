@@ -29,6 +29,17 @@ type fakeHealthChecker struct {
 	err error
 }
 
+func TestLivenessIndependentOfReadiness(t *testing.T) {
+	handler := NewHandler(service.UserService{}, nil, fakeHealthChecker{err: errors.New("redis unavailable")}, service.ChatService{}, service.MessageService{}, realtime.NewHub())
+	for path, status := range map[string]int{"/live": 200, "/ready": 503, "/health": 503} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != status {
+			t.Errorf("%s status = %d, want %d", path, rec.Code, status)
+		}
+	}
+}
+
 func (h fakeHealthChecker) Ping(_ context.Context) error {
 	return h.err
 }

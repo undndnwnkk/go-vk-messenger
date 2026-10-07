@@ -17,6 +17,7 @@ type Config struct {
 	JWTConfig      JWTConfig
 	RedisURL       string
 	RedisPrefix    string
+	MetricsAddr    string
 }
 
 type HTTPConfig struct {
@@ -74,6 +75,7 @@ func (c *Config) Load() error {
 	c.PostgresConfig = postgresConf
 	c.JWTConfig = jwtConf
 	c.RedisURL = getEnv("REDIS_URL", "")
+	c.MetricsAddr = getEnv("METRICS_ADDR", "127.0.0.1:9090")
 	c.RedisPrefix = getEnv("REDIS_PREFIX", "messenger")
 	if strings.ContainsAny(c.RedisPrefix, " \t\r\n") {
 		return errors.New("REDIS_PREFIX must not contain whitespace")
