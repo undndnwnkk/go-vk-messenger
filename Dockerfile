@@ -15,24 +15,24 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/go-vk-messenger-migrate ./cmd/mi
 # Migration runtime stage
 FROM alpine:3.20 AS migrate
 
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -g 10001 -S app && adduser -u 10001 -S app -G app
 WORKDIR /app
 
 COPY --from=builder /out/go-vk-messenger-migrate /app/go-vk-messenger-migrate
 COPY migrations /migrations
 
-USER app
+USER 10001:10001
 ENTRYPOINT ["/app/go-vk-messenger-migrate"]
 
 # Application runtime stage
 FROM alpine:3.20 AS app
 
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -g 10001 -S app && adduser -u 10001 -S app -G app
 WORKDIR /app
 
 COPY --from=builder /out/go-vk-messenger /app/go-vk-messenger
 
-USER app
-EXPOSE 8080
+USER 10001:10001
+EXPOSE 8080 9090
 
 ENTRYPOINT ["/app/go-vk-messenger"]

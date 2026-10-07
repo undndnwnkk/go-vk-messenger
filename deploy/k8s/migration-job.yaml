@@ -1,0 +1,35 @@
+# Apply and wait for completion BEFORE deploying a version that needs new schema.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: messenger-migrate
+  namespace: messenger
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: messenger-migrate:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: messenger-config}
+            - secretRef: {name: messenger-secrets}
+          env:
+            - name: MIGRATIONS_DIR
+              value: /migrations
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}

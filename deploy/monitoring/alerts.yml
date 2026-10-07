@@ -1,0 +1,24 @@
+groups:
+  - name: messenger
+    rules:
+      - alert: MessengerUnavailable
+        expr: sum(up{job="messenger"}) == 0 or absent(up{job="messenger"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: No messenger metrics endpoint is reachable
+      - alert: MessengerHTTPFailures
+        expr: sum(rate(messenger_http_requests_total{status=~"5.."}[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Messenger is returning sustained HTTP 5xx errors
+      - alert: MessengerRealtimePublicationFailures
+        expr: sum(increase(messenger_redis_publish_errors_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Some events could not be relayed through Redis
