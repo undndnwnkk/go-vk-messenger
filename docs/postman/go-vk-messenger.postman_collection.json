@@ -44,6 +44,26 @@
     {
       "key": "message_id",
       "value": ""
+    },
+    {
+      "key": "group_chat_id",
+      "value": ""
+    },
+    {
+      "key": "carol_username",
+      "value": "carol"
+    },
+    {
+      "key": "carol_token",
+      "value": ""
+    },
+    {
+      "key": "carol_id",
+      "value": ""
+    },
+    {
+      "key": "group_message_id",
+      "value": ""
     }
   ],
   "item": [
@@ -132,6 +152,44 @@
       ]
     },
     {
+      "name": "Register Carol",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{carol_username}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('register carol created or already exists', function () {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('carol_token', pm.response.json().access_token);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
       "name": "Login Alice",
       "request": {
         "method": "POST",
@@ -188,6 +246,40 @@
       ]
     },
     {
+      "name": "Login Carol",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{carol_username}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('login carol ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('carol_token', pm.response.json().access_token);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
       "name": "Get Alice",
       "request": {
         "method": "GET",
@@ -236,6 +328,31 @@
       ]
     },
     {
+      "name": "Get Carol",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{carol_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('get carol ok', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.set('carol_id', pm.response.json().id);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
       "name": "Create Direct Chat",
       "request": {
         "method": "POST",
@@ -263,6 +380,152 @@
               "pm.test('create direct chat ok', function () { pm.response.to.have.status(200); });",
               "pm.collectionVariables.set('chat_id', pm.response.json().id);"
             ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Group Chat",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Backend team\",\n  \"user_ids\": [\n    \"{{bob_id}}\",\n    \"{{carol_id}}\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/chats/group",
+        "description": "Creates a group chat owned by Alice with Bob and Carol as members and stores group_chat_id."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+              "const json = pm.response.json();",
+              "pm.test('group chat id is returned', function () { pm.expect(json.id).to.exist; });",
+              "pm.collectionVariables.set('group_chat_id', json.id);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Group Members",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/chats/{{group_chat_id}}/members",
+        "description": "Checks that the created group chat has Alice, Bob, and Carol as members."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('members response is an array', function () { pm.expect(json).to.be.an('array'); });",
+              "pm.test('group has three members', function () { pm.expect(json.length).to.eql(3); });",
+              "const ids = json.map(member => member.user_id);",
+              "pm.test('all demo users are members', function () {",
+              "  ['alice_id', 'bob_id', 'carol_id'].forEach(function (key) {",
+              "    pm.expect(ids).to.include(pm.collectionVariables.get(key));",
+              "  });",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Send Group Message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"content\": \"hello group\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/chats/{{group_chat_id}}/messages",
+        "description": "Alice sends a message to the group chat."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+              "const json = pm.response.json();",
+              "pm.test('group message id is returned', function () { pm.expect(json.id).to.exist; });",
+              "pm.collectionVariables.set('group_message_id', json.id);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Group History",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{carol_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/chats/{{group_chat_id}}/messages?limit=50",
+        "description": "Carol reads the group message history to demonstrate that another group member can see the message."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('history has messages', function () { pm.expect(json.messages).to.be.an('array'); });",
+              "pm.test('group message is visible to Carol', function () {",
+              "  pm.expect(json.messages.some(function (message) { return String(message.id) === String(pm.collectionVariables.get('group_message_id')); })).to.eql(true);",
+              "});"
+            ],
+            "type": "text/javascript"
           }
         }
       ]
@@ -400,6 +663,432 @@
               "pm.test('read state uses message id', function () { pm.expect(pm.response.json().last_read_message_id).to.eql(Number(pm.collectionVariables.get('message_id'))); });"
             ]
           }
+        }
+      ]
+    },
+    {
+      "name": "Rate Limit",
+      "description": "Run this folder in Collection Runner without delay. Bob must not have sent messages during the previous 5 seconds; wait 5 seconds before rerunning.",
+      "item": [
+        {
+          "name": "Bob Send 01",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 02",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 02\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 03",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 03\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 04",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 04\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 05",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 05\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 06",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 06\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 07",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 07\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 08",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 08\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 09",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 09\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 10",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "Part of the rate limiter burst. Run the Rate Limit folder without delay between requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Send 11 - Rate Limited",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"rate limit 11\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages",
+            "description": "The 11th message in the 5 second window should be rejected by the per-user message rate limiter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 429', function () { pm.response.to.have.status(429); });",
+                  "const json = pm.response.json();",
+                  "pm.test('error code is rate_limited', function () { pm.expect(json.error.code).to.eql('rate_limited'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     }

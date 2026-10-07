@@ -18,6 +18,10 @@ func NewMessageNotifier(chat service.ChatService, hub *realtime.Hub) *MessageNot
 }
 
 func (n *MessageNotifier) NotifyMessageCreated(ctx context.Context, currentUserID string, msg *model.Message) error {
+	return n.NotifyMessageUpdated(ctx, currentUserID, realtime.EventMessageCreated, msg)
+}
+
+func (n *MessageNotifier) NotifyMessageUpdated(ctx context.Context, currentUserID string, eventType realtime.EventType, msg *model.Message) error {
 	members, err := n.chat.GetMembersByChatID(ctx, currentUserID, msg.ChatID)
 	if err != nil {
 		return err
@@ -27,7 +31,7 @@ func (n *MessageNotifier) NotifyMessageCreated(ctx context.Context, currentUserI
 	for _, member := range members {
 		userIDs = append(userIDs, member.UserID)
 	}
-	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(realtime.EventMessageCreated, msg))
+	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(eventType, msg))
 	return nil
 }
 

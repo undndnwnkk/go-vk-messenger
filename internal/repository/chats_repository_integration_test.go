@@ -222,11 +222,11 @@ func TestChatRepositoryPostgres(t *testing.T) {
 	})
 	t.Run("ReadStatus", func(t *testing.T) {
 		messages := NewMessageRepository(pool)
-		own, err := messages.Create(ctx, group.ID, users[0], "own")
+		own, err := messages.Create(ctx, group.ID, users[0], "own", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		incoming, err := messages.Create(ctx, group.ID, users[1], "incoming")
+		incoming, err := messages.Create(ctx, group.ID, users[1], "incoming", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +234,7 @@ func TestChatRepositoryPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		other, err := messages.Create(ctx, otherChat.ID, users[0], "other chat")
+		other, err := messages.Create(ctx, otherChat.ID, users[0], "other chat", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func TestChatRepositoryPostgres(t *testing.T) {
 		if bobGroup.UnreadCount != 0 {
 			t.Fatalf("new member unread count before new message = %d, want 0", bobGroup.UnreadCount)
 		}
-		next, err := messages.Create(ctx, group.ID, users[0], "new after add")
+		next, err := messages.Create(ctx, group.ID, users[0], "new after add", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -346,7 +346,7 @@ func TestChatRepositoryPostgres(t *testing.T) {
 
 		ids := make([]int64, 300)
 		for i := range ids {
-			msg, err := messages.Create(ctx, concurrentChat.ID, users[1], fmt.Sprintf("message %d", i+1))
+			msg, err := messages.Create(ctx, concurrentChat.ID, users[1], fmt.Sprintf("message %d", i+1), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
