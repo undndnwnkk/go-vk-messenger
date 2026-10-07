@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func TestCheckerDependenciesAndDeadline(t *testing.T) {
@@ -22,5 +24,17 @@ func TestCheckerDependenciesAndDeadline(t *testing.T) {
 	defer cancel()
 	if err := c.Ping(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Ping = %v", err)
+	}
+}
+
+func TestCheckerReportsUnavailableRedis(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	_ = client.Close()
+	c := Checker{Checks: []func(context.Context) error{
+		func(context.Context) error { return nil },
+		func(ctx context.Context) error { return client.Ping(ctx).Err() },
+	}}
+	if err := c.Ping(context.Background()); err == nil {
+		t.Fatal("readiness must fail when configured Redis is unavailable")
 	}
 }
