@@ -16,6 +16,16 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   migrate:
     container_name: messenger-migrate
     build:
@@ -45,14 +55,54 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       HTTP_PORT: ${HTTP_PORT:-8080}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PREFIX: ${REDIS_PREFIX:-messenger}
+      METRICS_ADDR: :9090
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     ports:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.4.0
+    profiles: [monitoring]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-messenger-demo}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/monitoring/datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./deploy/monitoring/dashboards.yml:/etc/grafana/provisioning/dashboards/messenger.yml:ro
+      - ./deploy/monitoring/messenger.json:/var/lib/grafana/dashboards/messenger.json:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:

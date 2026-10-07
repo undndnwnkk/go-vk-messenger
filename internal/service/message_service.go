@@ -43,7 +43,7 @@ type MessageRepositoryInterface interface {
 type MessageService struct {
 	msgRepo     MessageRepositoryInterface
 	chatService ChatService
-	limiter     *MessageRateLimiter
+	limiter     MessageLimiter
 }
 
 func NewMessageService(
@@ -56,7 +56,7 @@ func NewMessageService(
 func NewMessageServiceWithLimiter(
 	msgRepo MessageRepositoryInterface,
 	chatService ChatService,
-	limiter *MessageRateLimiter,
+	limiter MessageLimiter,
 ) *MessageService {
 	return &MessageService{msgRepo: msgRepo, chatService: chatService, limiter: limiter}
 }
@@ -69,7 +69,11 @@ func (s *MessageService) Send(ctx context.Context, senderID, chatID string, req 
 		return nil, ErrInvalidMessageID
 	}
 
-	if !s.limiter.Allow(senderID) {
+	allowed, err := s.limiter.Check(ctx, senderID)
+	if err != nil {
+		return nil, ErrRateLimiterUnavailable
+	}
+	if !allowed {
 		return nil, ErrRateLimited
 	}
 
@@ -197,11 +201,12 @@ func messageRepoError(err error) error {
 }
 
 var (
-	ErrNotMessageAuthor = errors.New("only the message author can edit or delete it")
-	ErrEmptyMessage     = errors.New("message cannot be empty")
-	ErrMessageTooLong   = errors.New("message is too long")
-	ErrInvalidLimit     = errors.New("invalid limit")
-	ErrInvalidCursor    = errors.New("invalid cursor")
-	ErrEmptySearchQuery = errors.New("search query cannot be empty")
-	ErrRateLimited      = errors.New("too many messages")
+	ErrNotMessageAuthor       = errors.New("only the message author can edit or delete it")
+	ErrEmptyMessage           = errors.New("message cannot be empty")
+	ErrMessageTooLong         = errors.New("message is too long")
+	ErrInvalidLimit           = errors.New("invalid limit")
+	ErrInvalidCursor          = errors.New("invalid cursor")
+	ErrEmptySearchQuery       = errors.New("search query cannot be empty")
+	ErrRateLimited            = errors.New("too many messages")
+	ErrRateLimiterUnavailable = errors.New("message rate limiter unavailable")
 )

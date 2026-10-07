@@ -115,7 +115,25 @@ instead of a per-message table such as:
 message_reads(user_id, message_id)
 ```
 
-Redis/NATS is not used because the app is currently single-instance. If several Go instances are introduced, the in-memory Hub will need an external Pub/Sub layer.
+Redis Pub/Sub relays events between the local WebSocket hubs of multiple app instances. Redis also enforces a shared sliding-window send limit (10 messages per user per 5 seconds). PostgreSQL remains the source of truth. Without REDIS_URL the app uses its original single-instance Hub and in-memory limiter.
+
+## Redis, Kubernetes and monitoring
+
+- Redis relay supports messages, edits/deletions, reactions, read status and private mute updates across replicas.
+- Kubernetes manifests run two app replicas, PostgreSQL with a PVC, Redis and a separate migration Job.
+- Prometheus scrapes HTTP rates/latency, WebSocket connections, Redis publication errors and Go/process metrics.
+- Grafana comes with a provisioned **Messenger overview** dashboard; Prometheus includes three alert rules.
+- /live checks the process; /ready and /health check PostgreSQL and configured Redis. Metrics use a separate internal listener.
+
+```bash
+docker compose --profile monitoring up -d --build
+```
+
+Open Grafana at http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD from .env; demo default messenger-demo), and Prometheus at http://localhost:9091. Monitoring ports bind to localhost. Redis is not published to the host.
+
+Configuration: REDIS_URL (empty locally or redis://redis:6379/0 in Compose), REDIS_PREFIX (messenger), METRICS_ADDR (127.0.0.1:9090 locally; :9090 inside containers). All app replicas need the same database, Redis prefix and JWT secret. Redis failure makes readiness and message sends return 503; REST history remains the recovery mechanism for missed Pub/Sub events.
+
+See the [infrastructure runbook](docs/infrastructure.md) (Russian) for kind deployment, migration ordering, probes, dashboard metrics, two-replica smoke tests and the sequential PR workflow. This is a local demo topology: one PostgreSQL/Redis replica, and ephemeral monitoring storage in Kubernetes.
 
 ## Project structure
 
@@ -127,6 +145,10 @@ internal/model/          DTOs and domain models
 internal/realtime/       Client, Hub, WebSocket events
 internal/repository/     PostgreSQL repositories
 internal/service/        business logic
+internal/health/         dependency readiness checks
+internal/observability/  Prometheus registry and HTTP middleware
+deploy/                  Kubernetes manifests and monitoring provisioning
+tests/infrastructure/   opt-in smoke test against two running replicas
 migrations/              goose SQL migrations
 .github/workflows/       CI workflow
 ```
@@ -208,7 +230,7 @@ make docker-logs
 make docker-down
 ```
 
-Docker Compose starts three services: `db`, one-shot `migrate`, and `app`. The app waits for PostgreSQL to become healthy and for migrations to finish successfully. This path needs Docker only; local Go and local make are not required.
+Docker Compose starts `db`, `redis`, one-shot `migrate`, and `app`. The app waits for PostgreSQL/Redis health and successful migrations. The optional `monitoring` profile adds Prometheus and Grafana. This path needs Docker only; local Go and local make are not required.
 
 If you changed database credentials, the `migrate` service receives the same values through compose variable substitution. For an already running environment, rerun migrations explicitly with:
 
@@ -363,6 +385,8 @@ Public endpoints:
 
 ```text
 GET  /health
+GET  /live
+GET  /ready
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 ```
