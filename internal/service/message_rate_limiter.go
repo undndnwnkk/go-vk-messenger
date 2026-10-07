@@ -1,9 +1,18 @@
 package service
 
 import (
+	"context"
 	"sync"
 	"time"
 )
+
+type MessageLimiter interface {
+	Check(context.Context, string) (bool, error)
+}
+
+func (l *MessageRateLimiter) Check(_ context.Context, userID string) (bool, error) {
+	return l.Allow(userID), nil
+}
 
 const (
 	MessageRateLimitCount  = 10

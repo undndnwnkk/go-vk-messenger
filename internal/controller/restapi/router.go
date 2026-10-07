@@ -120,6 +120,8 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 
 func publicError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, service.ErrRateLimiterUnavailable):
+		return http.StatusServiceUnavailable, "service_unavailable", service.ErrRateLimiterUnavailable.Error()
 	case errors.Is(err, service.ErrInvalidReaction):
 		return http.StatusBadRequest, "invalid_reaction", service.ErrInvalidReaction.Error()
 	case errors.Is(err, service.ErrEmptyMessage):

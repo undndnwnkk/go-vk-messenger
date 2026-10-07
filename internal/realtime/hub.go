@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"log"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -9,6 +10,7 @@ import (
 type Hub struct {
 	clients map[string]map[*Client]struct{}
 	mux     sync.RWMutex
+	publish func([]string, []byte) error
 }
 
 func NewHub() *Hub {
@@ -42,6 +44,18 @@ func (h *Hub) ConnectionCount(userID string) int {
 }
 
 func (h *Hub) SendToUser(userID string, data []byte) {
+	h.SendToUsers([]string{userID}, data)
+}
+
+// SetPublisher is used by the optional Redis relay; local clients still receive
+// events if publication fails. The relay delivers remote events only locally.
+func (h *Hub) SetPublisher(publish func([]string, []byte) error) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	h.publish = publish
+}
+
+func (h *Hub) sendLocal(userID string, data []byte) {
 	clients := h.clientsForUser(userID)
 	for _, client := range clients {
 		if client.Send(data) {
@@ -53,8 +67,22 @@ func (h *Hub) SendToUser(userID string, data []byte) {
 }
 
 func (h *Hub) SendToUsers(userIDs []string, data []byte) {
+	seen := make(map[string]bool, len(userIDs))
+	unique := make([]string, 0, len(userIDs))
 	for _, userID := range userIDs {
-		h.SendToUser(userID, data)
+		if !seen[userID] {
+			seen[userID] = true
+			unique = append(unique, userID)
+			h.sendLocal(userID, data)
+		}
+	}
+	h.mux.RLock()
+	publish := h.publish
+	h.mux.RUnlock()
+	if publish != nil && len(unique) > 0 {
+		if err := publish(unique, data); err != nil {
+			log.Printf("realtime publication failed; clients should reload history: %v", err)
+		}
 	}
 }
 

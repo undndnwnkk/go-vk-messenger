@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,8 @@ type Config struct {
 	HTTPConfig     HTTPConfig
 	PostgresConfig PostgresConfig
 	JWTConfig      JWTConfig
+	RedisURL       string
+	RedisPrefix    string
 }
 
 type HTTPConfig struct {
@@ -70,6 +73,11 @@ func (c *Config) Load() error {
 	c.HTTPConfig = httpConf
 	c.PostgresConfig = postgresConf
 	c.JWTConfig = jwtConf
+	c.RedisURL = getEnv("REDIS_URL", "")
+	c.RedisPrefix = getEnv("REDIS_PREFIX", "messenger")
+	if strings.ContainsAny(c.RedisPrefix, " \t\r\n") {
+		return errors.New("REDIS_PREFIX must not contain whitespace")
+	}
 	return nil
 }
 

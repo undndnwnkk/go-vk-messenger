@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/undndnwnkk/go-vk-messenger/internal/config"
 	"github.com/undndnwnkk/go-vk-messenger/internal/controller/restapi"
 	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
@@ -49,9 +50,34 @@ func main() {
 	chatRepo := repository.NewChatRepository(pgxPool)
 	chatService := service.NewChatService(chatRepo, *userService)
 	messageRepo := repository.NewMessageRepository(pgxPool)
-	messageService := service.NewMessageService(messageRepo, *chatService)
-
 	hub := realtime.NewHub()
+	var limiter service.MessageLimiter = service.NewMessageRateLimiter()
+	if config.RedisURL != "" {
+		options, err := redis.ParseURL(config.RedisURL)
+		if err != nil {
+			log.Fatal("invalid REDIS_URL")
+		}
+		options.ContextTimeoutEnabled = true
+		options.MaxRetries = -1
+		options.DialTimeout = 2 * time.Second
+		options.ReadTimeout = 2 * time.Second
+		options.WriteTimeout = 2 * time.Second
+		client := redis.NewClient(options)
+		defer client.Close()
+		startupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := client.Ping(startupCtx).Err(); err != nil {
+			log.Fatal("redis unavailable at startup")
+		}
+		relay, err := realtime.NewRedisRelay(startupCtx, client, hub, config.RedisPrefix+":events")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer relay.Close()
+		limiter = service.NewRedisRateLimiter(client, config.RedisPrefix)
+		log.Println("redis realtime relay and shared rate limiter enabled")
+	}
+	messageService := service.NewMessageServiceWithLimiter(messageRepo, *chatService, limiter)
 	handler := restapi.NewHandler(*userService, jwtService, pgxPool, *chatService, *messageService, hub)
 	server := http.Server{
 		Addr:    config.HTTPAddr(),
