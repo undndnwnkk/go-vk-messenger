@@ -20,6 +20,7 @@ Chats:
 - chat membership;
 - group admins;
 - hidden access policy for private chat resources.
+- personal mute settings, synchronized across the user's connections.
 
 Messages:
 
@@ -31,6 +32,7 @@ Messages:
 - author-only editing with `edited` / `edited_at`;
 - deletion for everyone with `deleted` / `deleted_at`, preserving message IDs and read cursors.
 - replies within a chat through REST and WebSocket, with a live preview of the original message.
+- reactions: like, heart, laugh, wow, sad, angry; add/remove your own reactions.
 
 Realtime:
 
@@ -39,6 +41,7 @@ Realtime:
 - realtime `message_created`;
 - realtime `message_edited` and `message_deleted`;
 - realtime `read_updated`;
+- realtime `reactions_updated` and private `chat_mute_updated`;
 - reconnect through REST history.
 
 Read status:
@@ -255,6 +258,10 @@ read-status
 message-edit-delete
 ↓
 message-replies
+↓
+message-reactions
+↓
+chat-mute
 ```
 
 Commands:
@@ -278,6 +285,8 @@ docker compose up -d app
 The migration adds nullable `edited_at` and `deleted_at` columns; existing messages start unedited and undeleted. Deletion clears the stored content. Rolling this migration back replaces deleted content with `[deleted]` to preserve message IDs and read cursors; it cannot restore the original text.
 
 Replies additionally require `20261007000200_add_message_replies.sql`, applied by the same commands. It adds nullable `reply_to_message_id` and a composite foreign key that keeps replies within the same chat. Existing messages have no reply target. Rolling back this migration preserves messages but removes their reply links.
+
+Reactions and mute require `20261007000300_add_message_reactions.sql` and `20261007000400_add_chat_mute.sql`. Apply them with the same Docker upgrade commands above or `make migrate-up` before starting the new binary. Existing messages start with no reactions; existing memberships start unmuted. Rollbacks remove reactions/mute preferences but preserve messages and memberships.
 
 ## Makefile
 
@@ -385,8 +394,11 @@ GET  /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages/search?q=hello
 PATCH  /api/v1/chats/{chatID}/messages/{messageID}
 DELETE /api/v1/chats/{chatID}/messages/{messageID}
+PUT    /api/v1/chats/{chatID}/messages/{messageID}/reactions/{reaction}
+DELETE /api/v1/chats/{chatID}/messages/{messageID}/reactions/{reaction}
 
 POST /api/v1/chats/{chatID}/read
+PATCH /api/v1/chats/{chatID}/mute
 
 GET /api/v1/ws
 ```
@@ -457,7 +469,9 @@ Authorization: Bearer <JWT>
   "title": null,
   "created_by": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "created_at": "2026-09-24T10:00:00Z",
-  "unread_count": 0
+  "unread_count": 0,
+  "muted": false,
+  "mute_version": 0
 }
 ```
 
@@ -485,7 +499,9 @@ Creating the same direct chat in reverse order returns the existing direct chat.
     "created_by": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "created_at": "2026-09-24T10:00:00Z",
     "last_read_message_id": 123,
-    "unread_count": 2
+    "unread_count": 2,
+    "muted": false,
+    "mute_version": 0
   }
 ]
 ```
@@ -538,7 +554,9 @@ Response:
   "deleted": false,
   "deleted_at": null,
   "reply_to_message_id": null,
-  "reply_to": null
+  "reply_to": null,
+  "reactions_version": 0,
+  "reactions": []
 }
 ```
 
@@ -620,7 +638,9 @@ Response: `200 OK` with the updated message:
   "deleted": false,
   "deleted_at": null,
   "reply_to_message_id": null,
-  "reply_to": null
+  "reply_to": null,
+  "reactions_version": 0,
+  "reactions": []
 }
 ```
 
@@ -638,6 +658,67 @@ Response: `200 OK` with the message object: `content: ""`, `deleted: true`, and 
 The database keeps a tombstone with the original ID, sender, and creation time, but clears the text. History includes this tombstone so clients can display “Message deleted”, including after reconnect. Search and unread counts exclude deleted messages. Read cursors remain valid and can advance to a deleted message ID.
 
 Both endpoints return `400 invalid_message_id` for a non-positive or malformed ID, `404 chat_not_found` for non-members, `404 message_not_found` for a missing, deleted, or different-chat message, and `403 forbidden` for another author's message. Repeated deletion and editing after deletion return `404 message_not_found`.
+
+### Reactions
+
+Use the reaction code in the path; there is no request body:
+
+| Code | Display |
+| --- | --- |
+| `like` | 👍 |
+| `heart` | ❤️ |
+| `laugh` | 😂 |
+| `wow` | 😮 |
+| `sad` | 😢 |
+| `angry` | 😡 |
+
+```http
+PUT /api/v1/chats/{chatID}/messages/123/reactions/like
+Authorization: Bearer <JWT>
+```
+
+Use `DELETE` on the same URL to remove your own reaction. Both return `200 OK` with the complete current state:
+
+```json
+{
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "message_id": 123,
+  "reactions_version": 1,
+  "reactions": [
+    {"reaction":"like","count":1,"user_ids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}
+  ]
+}
+```
+
+Any current chat member can react to their own or another member's undeleted message. One user may add several different reactions, but each kind appears at most once per user/message. Repeated PUT or DELETE is idempotent: no duplicate, version increment, or broadcast if nothing changed. The acting user always comes from JWT; you cannot remove someone else's reaction. Removing a member prevents new reaction changes but preserves their existing reactions.
+
+All message objects in REST history/search and WebSocket message events contain `reactions` (empty array when none) and `reactions_version`. Each group includes its count and user IDs, so clients can identify the signed-in user's selections. Editing preserves reactions. Deletion removes them and returns `reactions: []`; deleted messages reject further reaction mutations. Reactions do not mark messages read or change unread counts.
+
+Errors: `400 invalid_reaction`, `400 invalid_message_id`, `404 chat_not_found` for non-members, `404 message_not_found` for missing/deleted/different-chat messages. Reaction mutations use REST; updates are delivered through WebSocket.
+
+### Mute a chat
+
+```http
+PATCH /api/v1/chats/{chatID}/mute
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"muted":true}
+```
+
+Send `{"muted":false}` to unmute. The boolean is required: missing, null, or a wrong type returns `400 invalid_request`. Response (`200 OK`):
+
+```json
+{
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "muted": true,
+  "mute_version": 1
+}
+```
+
+Mute is a personal setting for direct and group chats, persisted in `chat_members`. Any member may change their own setting; admin rights are unnecessary. Non-members get `404 chat_not_found`. Other users' settings cannot be changed or read through this endpoint. `GET /api/v1/chats`, `GET /api/v1/chats/{chatID}`, and reopening an existing direct chat return the caller's `muted` and `mute_version`.
+
+This backend stores the notification flag; the client uses it to suppress sound/pop-up notifications. WebSocket messages, reactions, read updates, history, and unread counts continue working while muted. There is no push-notification service in this project. New memberships default to `muted: false`, `mute_version: 0`; leaving and rejoining resets the setting. Repeating the same state is idempotent and emits no event.
 
 ### History
 
@@ -659,7 +740,9 @@ GET /api/v1/chats/{chatID}/messages?limit=50
       "deleted": false,
       "deleted_at": null,
       "reply_to_message_id": null,
-      "reply_to": null
+      "reply_to": null,
+      "reactions_version": 0,
+      "reactions": []
     }
   ],
   "next_cursor": 120
@@ -802,7 +885,9 @@ Sent to the sending WebSocket client after the message is saved.
     "deleted": false,
     "deleted_at": null,
     "reply_to_message_id": null,
-    "reply_to": null
+    "reply_to": null,
+    "reactions_version": 0,
+    "reactions": []
   }
 }
 ```
@@ -825,7 +910,9 @@ Broadcast to online chat members after a successful insert.
     "deleted": false,
     "deleted_at": null,
     "reply_to_message_id": null,
-    "reply_to": null
+    "reply_to": null,
+    "reactions_version": 0,
+    "reactions": []
   }
 }
 ```
@@ -848,7 +935,9 @@ Editing and deletion are requested through REST (`PATCH` / `DELETE`); there are 
     "deleted": false,
     "deleted_at": null,
     "reply_to_message_id": null,
-    "reply_to": null
+    "reply_to": null,
+    "reactions_version": 0,
+    "reactions": []
   }
 }
 ```
@@ -856,6 +945,43 @@ Editing and deletion are requested through REST (`PATCH` / `DELETE`); there are 
 For deletion, `type` is `message_deleted`, `data.content` is empty, `data.deleted` is `true`, and `data.deleted_at` is the deletion time. Clients should replace their cached message by ID, hide deleted content, and refresh chat unread counts after deletion. Concurrent requests can deliver events out of order: a deletion is final, so ignore later edit events for a deleted ID; for edits, keep the newest `edited_at`.
 
 As with creation, a broadcast failure does not roll back a saved change. There is no offline event queue: after reconnect, reload history pages containing cached messages to reconcile edits and deletions (fetching only newer IDs is insufficient).
+
+### reactions_updated
+
+After an actual reaction change, all online chat members (including every connection of the actor) receive:
+
+```json
+{
+  "type": "reactions_updated",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "message_id": 123,
+    "reactions_version": 1,
+    "reactions": [
+      {"reaction":"like","count":1,"user_ids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}
+    ]
+  }
+}
+```
+
+Replace the cached reaction state by message ID. For out-of-order responses/events, keep the largest `reactions_version`, including reaction data embedded in other message events. A deleted message stays deleted; ignore late reaction events for it. A failed broadcast does not roll back a saved reaction; reload history after reconnect.
+
+### chat_mute_updated
+
+Only the user's own online connections receive this event, including the connection on the device that initiated the REST request:
+
+```json
+{
+  "type": "chat_mute_updated",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "muted": true,
+    "mute_version": 1
+  }
+}
+```
+
+Use `mute_version` to ignore stale settings events within a membership. After reconnect or rejoining a chat, reload settings from the chat list. Other members never receive your mute event.
 
 ### read_updated
 
@@ -919,6 +1045,16 @@ Messages and realtime:
 - Alice sends through WebSocket;
 - Alice receives `message_ack`;
 - Bob receives `message_created`.
+
+Reactions and mute:
+
+- Alice and Bob add the same reaction: count is 2; Alice repeats PUT: count/version stay unchanged;
+- Alice removes her reaction: Bob's remains; history/search show the current count;
+- participants receive `reactions_updated`, outsiders do not; a deleted message rejects reactions;
+- Bob mutes a chat: all Bob's connections receive `chat_mute_updated`, Alice receives nothing;
+- Bob still receives messages while muted, and unread counts increase normally;
+- the chat list retains Bob's setting after reconnect; unmute restores `muted: false`;
+- non-members cannot change mute or reactions.
 
 Replies:
 
@@ -1022,6 +1158,8 @@ message_id=
 ```
 
 The collection includes direct chat creation, group chat creation, regular message flow, and a `Rate Limit` folder. Run the `Rate Limit` folder in Collection Runner without delay between requests; wait at least 5 seconds before rerunning it.
+
+The `Reactions and Mute` folder checks reaction add/repeat/remove and mute/unmute. Run the authentication, direct-chat, and message setup requests first; `message_id` must refer to an undeleted message in `chat_id`.
 
 For WebSocket testing, use two WebSocket tabs in Postman: Alice and Bob. Connect to `ws://localhost:8080/api/v1/ws` with the matching `Authorization` header.
 

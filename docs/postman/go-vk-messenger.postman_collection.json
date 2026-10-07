@@ -667,6 +667,314 @@
       ]
     },
     {
+      "name": "Reactions and Mute",
+      "description": "Run after authentication, direct chat creation, and Send Message. Uses an undeleted message_id from chat_id.",
+      "item": [
+        {
+          "name": "Alice Add Like",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{alice_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/{{message_id}}/reactions/like"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Alice reaction is present', function () { pm.expect(json.reactions.some(r => r.reaction === 'like' && r.user_ids.includes(pm.collectionVariables.get('alice_id')))).to.eql(true); });",
+                  "pm.collectionVariables.set('reaction_version', json.reactions_version);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alice Repeat Like",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{alice_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/{{message_id}}/reactions/like"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('repeated reaction keeps version', function () { pm.expect(json.reactions_version).to.eql(Number(pm.collectionVariables.get('reaction_version'))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Add Laugh",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/{{message_id}}/reactions/laugh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Bob reaction is present', function () { pm.expect(json.reactions.some(r => r.reaction === 'laugh' && r.user_ids.includes(pm.collectionVariables.get('bob_id')))).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob Remove Laugh",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/{{message_id}}/reactions/laugh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Bob reaction removed', function () { pm.expect(json.reactions.some(r => r.reaction === 'laugh' && r.user_ids.includes(pm.collectionVariables.get('bob_id')))).to.eql(false); });",
+                  "pm.test('Alice reaction remains', function () { pm.expect(json.reactions.some(r => r.reaction === 'like' && r.user_ids.includes(pm.collectionVariables.get('alice_id')))).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alice Remove Like",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{alice_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/messages/{{message_id}}/reactions/like"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('Alice reaction removed', function () { pm.expect(json.reactions.some(r => r.reaction === 'like' && r.user_ids.includes(pm.collectionVariables.get('alice_id')))).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mute Bob Chat",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/mute",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"muted\":true}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('muted is true', function () { pm.expect(json.muted).to.eql(true); });",
+                  "pm.collectionVariables.set('mute_version', json.mute_version);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repeat Mute Bob Chat",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/mute",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"muted\":true}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('repeated mute keeps version', function () { pm.expect(json.mute_version).to.eql(Number(pm.collectionVariables.get('mute_version'))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Bob Chat List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('chat list has persisted mute', function () { const chat = json.find(c => c.id === pm.collectionVariables.get('chat_id')); pm.expect(chat).to.exist; pm.expect(chat.muted).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unmute Bob Chat",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}/mute",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"muted\":false}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('muted is false', function () { pm.expect(json.muted).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check Bob Chat Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bob_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/chats/{{chat_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test('chat details have persisted unmute', function () { pm.expect(json.muted).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Rate Limit",
       "description": "Run this folder in Collection Runner without delay. Bob must not have sent messages during the previous 5 seconds; wait 5 seconds before rerunning.",
       "item": [

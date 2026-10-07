@@ -20,6 +20,7 @@ Chats:
 - membership;
 - group admins;
 - hidden access policy для приватных ресурсов чата.
+- персональный mute с сохранением в БД и синхронизацией между подключениями пользователя.
 
 Messages:
 
@@ -31,6 +32,7 @@ Messages:
 - редактирование своих сообщений с отметками `edited` / `edited_at`;
 - удаление своих сообщений для всех с отметками `deleted` / `deleted_at`, с сохранением ID и курсоров прочтения.
 - ответы на сообщения внутри чата через REST и WebSocket с актуальной цитатой оригинала.
+- реакции: like, heart, laugh, wow, sad, angry; добавление и снятие своих реакций.
 
 Realtime:
 
@@ -39,6 +41,7 @@ Realtime:
 - realtime `message_created`;
 - realtime `message_edited` и `message_deleted`;
 - realtime `read_updated`;
+- realtime `reactions_updated` и персональное событие `chat_mute_updated`;
 - восстановление после reconnect через REST history.
 
 Read status:
@@ -255,6 +258,10 @@ read-status
 message-edit-delete
 ↓
 message-replies
+↓
+message-reactions
+↓
+chat-mute
 ```
 
 Команды:
@@ -373,8 +380,11 @@ GET  /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages/search?q=hello
 PATCH  /api/v1/chats/{chatID}/messages/{messageID}
 DELETE /api/v1/chats/{chatID}/messages/{messageID}
+PUT    /api/v1/chats/{chatID}/messages/{messageID}/reactions/{reaction}
+DELETE /api/v1/chats/{chatID}/messages/{messageID}/reactions/{reaction}
 
 POST /api/v1/chats/{chatID}/read
+PATCH /api/v1/chats/{chatID}/mute
 
 GET /api/v1/ws
 ```
@@ -473,7 +483,9 @@ Response:
   "deleted": false,
   "deleted_at": null,
   "reply_to_message_id": null,
-  "reply_to": null
+  "reply_to": null,
+  "reactions_version": 0,
+  "reactions": []
 }
 ```
 
@@ -557,7 +569,9 @@ Content-Type: application/json
   "deleted": false,
   "deleted_at": null,
   "reply_to_message_id": null,
-  "reply_to": null
+  "reply_to": null,
+  "reactions_version": 0,
+  "reactions": []
 }
 ```
 
@@ -586,6 +600,77 @@ docker compose up -d app
 
 Без Docker: `make migrate-up` перед запуском новой версии. Миграция добавляет `edited_at` и `deleted_at`; у существующих сообщений обе даты изначально `NULL`. Откат заменяет удалённый текст на `[deleted]`, сохраняя ID и курсоры; исходный текст восстановить нельзя.
 
+### Реакции
+
+Код реакции указывается в URL, тело запроса не требуется:
+
+| Код | Отображение |
+| --- | --- |
+| `like` | 👍 |
+| `heart` | ❤️ |
+| `laugh` | 😂 |
+| `wow` | 😮 |
+| `sad` | 😢 |
+| `angry` | 😡 |
+
+```http
+PUT /api/v1/chats/{chatID}/messages/123/reactions/like
+Authorization: Bearer <JWT>
+```
+
+Для снятия своей реакции — `DELETE` на тот же URL. Оба запроса возвращают `200 OK` с полным текущим состоянием:
+
+```json
+{
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "message_id": 123,
+  "reactions_version": 1,
+  "reactions": [
+    {"reaction":"like","count":1,"user_ids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}
+  ]
+}
+```
+
+Участник чата может реагировать на свои и чужие неудалённые сообщения. Можно поставить несколько разных реакций, но каждую — только один раз. Повторные PUT/DELETE идемпотентны: если состояние не изменилось, счётчик и версия не меняются, рассылки нет. Пользователь определяется по JWT, чужие реакции снять нельзя. После исключения участник не может менять реакции, но ранее поставленные реакции сохраняются.
+
+Все объекты сообщений в истории, поиске и WebSocket содержат `reactions` (пустой массив при отсутствии реакций) и `reactions_version`. В каждой группе есть код, количество и ID пользователей. Редактирование сохраняет реакции, удаление сообщения очищает их. Реакции не влияют на прочитанность и счётчик непрочитанных.
+
+Ошибки: `400 invalid_reaction`, `400 invalid_message_id`; для постороннего — `404 chat_not_found`; для отсутствующего, удалённого или принадлежащего другому чату сообщения — `404 message_not_found`. Изменения выполняются через REST, события доставляются через WebSocket.
+
+### Mute чата
+
+```http
+PATCH /api/v1/chats/{chatID}/mute
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"muted":true}
+```
+
+Чтобы включить уведомления обратно, передай `{"muted":false}`. Поле обязательно; отсутствие, `null` или неверный тип дают `400 invalid_request`. Ответ (`200 OK`):
+
+```json
+{
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "muted": true,
+  "mute_version": 1
+}
+```
+
+Mute — личная настройка участника, сохраняемая в `chat_members`; работает для личных и групповых чатов. Права администратора не нужны. Менять можно только свою настройку. Посторонний получает `404 chat_not_found`. Список чатов, `GET /api/v1/chats/{chatID}` и повторное открытие существующего direct chat возвращают `muted` и `mute_version` текущего пользователя. Чужие настройки не выдаются в списке участников.
+
+Backend хранит флаг, а клиент использует его для отключения звука и всплывающих уведомлений. Доставка WebSocket-сообщений, реакций, статусов прочтения, история и счётчики непрочитанных продолжают работать. Отдельного push-сервиса в проекте нет. Новое участие в чате начинается с `muted: false`, `mute_version: 0`; после удаления и повторного добавления участника настройка сбрасывается. Повтор того же состояния не создаёт событие.
+
+Для этих функций нужны миграции `20261007000300_add_message_reactions.sql` и `20261007000400_add_chat_mute.sql`. Применить до запуска новой версии:
+
+```bash
+docker compose build migrate app
+docker compose run --rm migrate
+docker compose up -d app
+```
+
+Без Docker: `make migrate-up`. У существующих сообщений реакции изначально отсутствуют, у участников mute выключен. Откат удаляет реакции и настройки mute, сохраняя сообщения и участников.
+
 ### History
 
 ```http
@@ -609,7 +694,9 @@ Response:
       "deleted": false,
       "deleted_at": null,
       "reply_to_message_id": null,
-      "reply_to": null
+      "reply_to": null,
+      "reactions_version": 0,
+      "reactions": []
     }
   ],
   "next_cursor": 120
@@ -746,7 +833,9 @@ Sender всегда берётся из JWT. `sender_id` из payload игнор
     "deleted": false,
     "deleted_at": null,
     "reply_to_message_id": null,
-    "reply_to": null
+    "reply_to": null,
+    "reactions_version": 0,
+    "reactions": []
   }
 }
 ```
@@ -773,7 +862,9 @@ Sender всегда берётся из JWT. `sender_id` из payload игнор
     "deleted": false,
     "deleted_at": null,
     "reply_to_message_id": null,
-    "reply_to": null
+    "reply_to": null,
+    "reactions_version": 0,
+    "reactions": []
   }
 }
 ```
@@ -781,6 +872,43 @@ Sender всегда берётся из JWT. `sender_id` из payload игнор
 При удалении тип — `message_deleted`, `data.content` — пустая строка, `data.deleted` — `true`, `data.deleted_at` — время удаления. Клиент заменяет сообщение по ID, скрывает удалённый текст и обновляет счётчики чатов. При одновременных запросах события могут прийти не по порядку: удаление окончательно, последующие события редактирования такого ID нужно игнорировать; среди редактирований выбирать самое новое по `edited_at`.
 
 Ошибка рассылки не отменяет сохранённое изменение. Офлайн-очереди событий нет: после reconnect нужно перезагрузить страницы истории с закешированными сообщениями. Загрузки только новых ID недостаточно для получения пропущенных правок и удалений.
+
+### reactions_updated
+
+После реального изменения реакций все online-участники, включая все подключения автора действия, получают:
+
+```json
+{
+  "type": "reactions_updated",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "message_id": 123,
+    "reactions_version": 1,
+    "reactions": [
+      {"reaction":"like","count":1,"user_ids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}
+    ]
+  }
+}
+```
+
+Клиент заменяет список реакций по ID сообщения. Если ответы или события пришли не по порядку, сохраняй состояние с большей `reactions_version`, в том числе при получении реакций внутри других событий сообщения. Удаление окончательно: поздние реакции удалённого сообщения игнорируются. Ошибка рассылки не отменяет сохранение; после reconnect актуальные реакции доступны через историю.
+
+### chat_mute_updated
+
+Событие получают только подключения пользователя, изменившего настройку, включая его текущее устройство:
+
+```json
+{
+  "type": "chat_mute_updated",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "muted": true,
+    "mute_version": 1
+  }
+}
+```
+
+`mute_version` позволяет игнорировать запоздавшие изменения в рамках текущего участия в чате. После reconnect или повторного вступления загрузи настройки из списка чатов. Другие участники не получают событие о твоём mute.
 
 ### read_updated
 
@@ -826,6 +954,11 @@ Malformed JSON и unsupported event type не закрывают connection. С�
 - Alice может add/remove Carol.
 - Bob не может выполнять admin mutations.
 - Alice отправляет REST message, Bob получает `message_created`.
+- Alice/Bob ставят одинаковую реакцию: счётчик 2; повторный PUT не меняет счётчик или версию.
+- Alice снимает свою реакцию, реакция Bob остаётся; участники получают `reactions_updated`, посторонние — нет.
+- Удалённое сообщение не принимает реакции, история и поиск показывают актуальный список.
+- Bob включает mute: событие получают только его подключения; сообщения по-прежнему доставляются, непрочитанные считаются.
+- После reconnect mute сохраняется; `muted: false` выключает его. Посторонний не может менять настройки или реакции.
 - Alice отправляет WebSocket `send_message`, Alice получает `message_ack`, Bob получает `message_created`.
 - Bob отвечает на сообщение Alice через REST и WebSocket: ответ/ack и `message_created` содержат `reply_to_message_id` и цитату оригинала.
 - Страница истории с ответом содержит цитату, даже если оригинала на этой странице нет.
@@ -874,6 +1007,8 @@ message_id=
 ```
 
 В коллекции есть создание direct chat, создание group chat, обычный message flow и папка `Rate Limit`. Папку `Rate Limit` запускай через Collection Runner без задержек между запросами; перед повторным запуском подожди минимум 5 секунд.
+
+Папка `Reactions and Mute` проверяет добавление, повтор и снятие реакции, включение и выключение mute. Сначала выполни запросы авторизации, создания direct chat и отправки сообщения; `message_id` должен указывать на неудалённое сообщение из `chat_id`.
 
 WebSocket удобнее проверить двумя WebSocket tabs в Postman: Alice и Bob.
 
