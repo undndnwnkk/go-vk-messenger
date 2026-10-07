@@ -21,6 +21,10 @@ const httpMessageUser = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const httpMessagePath = "/api/v1/chats/" + httpMessageChat + "/messages"
 
 type httpMessageRepo struct {
+	reactionChanged              bool
+	reactionAdd                  bool
+	reactionName                 string
+	reactionID                   int64
 	reply                        *model.MessageReply
 	message                      *model.Message
 	mutationErr                  error

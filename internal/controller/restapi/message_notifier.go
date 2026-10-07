@@ -22,7 +22,15 @@ func (n *MessageNotifier) NotifyMessageCreated(ctx context.Context, currentUserI
 }
 
 func (n *MessageNotifier) NotifyMessageUpdated(ctx context.Context, currentUserID string, eventType realtime.EventType, msg *model.Message) error {
-	members, err := n.chat.GetMembersByChatID(ctx, currentUserID, msg.ChatID)
+	return n.notifyChat(ctx, currentUserID, msg.ChatID, eventType, msg)
+}
+
+func (n *MessageNotifier) NotifyReactionsUpdated(ctx context.Context, currentUserID string, state *model.MessageReactions) error {
+	return n.notifyChat(ctx, currentUserID, state.ChatID, realtime.EventReactionsUpdated, state)
+}
+
+func (n *MessageNotifier) notifyChat(ctx context.Context, currentUserID, chatID string, eventType realtime.EventType, data any) error {
+	members, err := n.chat.GetMembersByChatID(ctx, currentUserID, chatID)
 	if err != nil {
 		return err
 	}
@@ -31,7 +39,7 @@ func (n *MessageNotifier) NotifyMessageUpdated(ctx context.Context, currentUserI
 	for _, member := range members {
 		userIDs = append(userIDs, member.UserID)
 	}
-	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(eventType, msg))
+	n.hub.SendToUsers(userIDs, realtime.MustEventJSON(eventType, data))
 	return nil
 }
 

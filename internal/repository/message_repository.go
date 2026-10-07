@@ -38,7 +38,7 @@ func (r *MessageRepository) Create(
 
 func scanMessage(row pgx.Row) (*model.Message, error) {
 	var msg model.Message
-	err := row.Scan(&msg.ID, &msg.ChatID, &msg.SenderID, &msg.Content, &msg.CreatedAt, &msg.EditedAt, &msg.DeletedAt, &msg.ReplyToMessageID, &msg.ReplyTo)
+	err := row.Scan(&msg.ID, &msg.ChatID, &msg.SenderID, &msg.Content, &msg.CreatedAt, &msg.EditedAt, &msg.DeletedAt, &msg.ReplyToMessageID, &msg.ReplyTo, &msg.ReactionsVersion, &msg.Reactions)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMessageNotFound
@@ -70,13 +70,24 @@ func (r *MessageRepository) Edit(ctx context.Context, chatID, senderID string, m
 }
 
 func (r *MessageRepository) Delete(ctx context.Context, chatID, senderID string, messageID int64) (*model.Message, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin delete message: %w", err)
+	}
+	defer tx.Rollback(ctx)
 	// Retain the row so existing read cursors and history pagination remain valid.
-	msg, err := scanMessage(r.db.QueryRow(ctx, `
-		UPDATE messages SET content = '', deleted_at = clock_timestamp()
+	msg, err := scanMessage(tx.QueryRow(ctx, `
+		UPDATE messages SET content = '', deleted_at = clock_timestamp(), reactions_version = reactions_version + 1
 		WHERE chat_id = $1 AND sender_id = $2 AND id = $3 AND deleted_at IS NULL
 		RETURNING `+messageColumns, chatID, senderID, messageID))
 	if err != nil {
 		return nil, fmt.Errorf("delete message: %w", err)
+	}
+	if _, err := tx.Exec(ctx, "DELETE FROM message_reactions WHERE message_id = $1", messageID); err != nil {
+		return nil, fmt.Errorf("delete message reactions: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit delete message: %w", err)
 	}
 	return msg, nil
 }
@@ -154,7 +165,8 @@ const messageColumns = `id, chat_id, sender_id, content, created_at, edited_at, 
 		'edited', parent.edited_at IS NOT NULL, 'edited_at', parent.edited_at,
 		'deleted', parent.deleted_at IS NOT NULL, 'deleted_at', parent.deleted_at
 	) FROM messages parent
-	WHERE parent.chat_id = messages.chat_id AND parent.id = messages.reply_to_message_id) AS reply_to`
+	WHERE parent.chat_id = messages.chat_id AND parent.id = messages.reply_to_message_id) AS reply_to,
+	reactions_version, ` + messageReactionsJSON
 
 var (
 	createMessageQuery = `

@@ -18,6 +18,10 @@ const messageUser = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const messageChat = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 type messageRepoStub struct {
+	reactionChanged              bool
+	reactionAdd                  bool
+	reactionName                 string
+	reactionID                   int64
 	reply                        *model.MessageReply
 	message                      *model.Message
 	mutationCalled               bool
