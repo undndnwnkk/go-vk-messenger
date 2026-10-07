@@ -58,6 +58,8 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Post("/{chatID}/messages", h.createMessageHandler)
 				r.Get("/{chatID}/messages", h.getMessagesHistoryHandler)
 				r.Get("/{chatID}/messages/search", h.searchMessagesHandler)
+				r.Patch("/{chatID}/messages/{messageID}", h.editMessageHandler)
+				r.Delete("/{chatID}/messages/{messageID}", h.deleteMessageHandler)
 			})
 
 			r.Get("/ws", h.webSocketHandler)
@@ -143,6 +145,8 @@ func publicError(err error) (int, string, string) {
 		return http.StatusNotFound, "member_not_found", service.ErrMemberNotFound.Error()
 	case errors.Is(err, service.ErrNotAdmin):
 		return http.StatusForbidden, "forbidden", service.ErrNotAdmin.Error()
+	case errors.Is(err, service.ErrNotMessageAuthor):
+		return http.StatusForbidden, "forbidden", service.ErrNotMessageAuthor.Error()
 	case errors.Is(err, service.ErrAlreadyMember):
 		return http.StatusConflict, "already_member", service.ErrAlreadyMember.Error()
 	case errors.Is(err, service.ErrInvalidTitle):

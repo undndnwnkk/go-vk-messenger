@@ -8,14 +8,20 @@ import (
 	"unicode/utf8"
 
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/repository"
 )
 
 type MessageRepositoryInterface interface {
+	GetByID(ctx context.Context, chatID string, messageID int64) (*model.Message, error)
+	Edit(ctx context.Context, chatID, senderID string, messageID int64, content string) (*model.Message, error)
+	Delete(ctx context.Context, chatID, senderID string, messageID int64) (*model.Message, error)
+
 	Create(
 		ctx context.Context,
 		chatID string,
 		senderID string,
 		content string,
+		replyToMessageID *int64,
 	) (*model.Message, error)
 
 	ListBefore(
@@ -55,12 +61,11 @@ func NewMessageServiceWithLimiter(
 }
 
 func (s *MessageService) Send(ctx context.Context, senderID, chatID string, req model.CreateMessageRequest) (*model.Message, error) {
-	if len(strings.TrimSpace(req.Content)) == 0 {
-		return nil, ErrEmptyMessage
+	if err := validateMessageContent(req.Content); err != nil {
+		return nil, err
 	}
-
-	if utf8.RuneCountInString(req.Content) > 4000 {
-		return nil, ErrMessageTooLong
+	if req.ReplyToMessageID != nil && *req.ReplyToMessageID <= 0 {
+		return nil, ErrInvalidMessageID
 	}
 
 	if !s.limiter.Allow(senderID) {
@@ -71,9 +76,9 @@ func (s *MessageService) Send(ctx context.Context, senderID, chatID string, req 
 		return nil, fmt.Errorf("check message chat access: %w", err)
 	}
 
-	msg, err := s.msgRepo.Create(ctx, chatID, senderID, req.Content)
+	msg, err := s.msgRepo.Create(ctx, chatID, senderID, req.Content, req.ReplyToMessageID)
 	if err != nil {
-		return nil, err
+		return nil, messageRepoError(err)
 	}
 
 	return msg, nil
@@ -128,7 +133,70 @@ func (s *MessageService) Search(ctx context.Context, userID, chatID, query strin
 	return messages, nil
 }
 
+func validateMessageContent(content string) error {
+	if len(strings.TrimSpace(content)) == 0 {
+		return ErrEmptyMessage
+	}
+	if utf8.RuneCountInString(content) > 4000 {
+		return ErrMessageTooLong
+	}
+	return nil
+}
+
+func (s *MessageService) Edit(ctx context.Context, userID, chatID string, messageID int64, req model.EditMessageRequest) (*model.Message, error) {
+	if err := validateMessageContent(req.Content); err != nil {
+		return nil, err
+	}
+	if err := normalizeChatIDs(&userID, &chatID); err != nil {
+		return nil, err
+	}
+	if err := s.requireMessageAuthor(ctx, userID, chatID, messageID); err != nil {
+		return nil, err
+	}
+	msg, err := s.msgRepo.Edit(ctx, chatID, userID, messageID, req.Content)
+	return msg, messageRepoError(err)
+}
+
+func (s *MessageService) Delete(ctx context.Context, userID, chatID string, messageID int64) (*model.Message, error) {
+	if err := normalizeChatIDs(&userID, &chatID); err != nil {
+		return nil, err
+	}
+	if err := s.requireMessageAuthor(ctx, userID, chatID, messageID); err != nil {
+		return nil, err
+	}
+	msg, err := s.msgRepo.Delete(ctx, chatID, userID, messageID)
+	return msg, messageRepoError(err)
+}
+
+func (s *MessageService) requireMessageAuthor(ctx context.Context, userID, chatID string, messageID int64) error {
+	if messageID <= 0 {
+		return ErrInvalidMessageID
+	}
+	if _, err := s.chatService.GetChatByID(ctx, userID, chatID); err != nil {
+		return fmt.Errorf("check message chat access: %w", err)
+	}
+	msg, err := s.msgRepo.GetByID(ctx, chatID, messageID)
+	if err != nil {
+		return messageRepoError(err)
+	}
+	if msg.Deleted {
+		return ErrMessageNotFound
+	}
+	if msg.SenderID != userID {
+		return ErrNotMessageAuthor
+	}
+	return nil
+}
+
+func messageRepoError(err error) error {
+	if errors.Is(err, repository.ErrMessageNotFound) {
+		return ErrMessageNotFound
+	}
+	return err
+}
+
 var (
+	ErrNotMessageAuthor = errors.New("only the message author can edit or delete it")
 	ErrEmptyMessage     = errors.New("message cannot be empty")
 	ErrMessageTooLong   = errors.New("message is too long")
 	ErrInvalidLimit     = errors.New("invalid limit")

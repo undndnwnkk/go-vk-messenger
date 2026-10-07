@@ -319,6 +319,7 @@ var (
         count(m.id) AS unread_count
  FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
  LEFT JOIN messages m ON m.chat_id = c.id
+      AND m.deleted_at IS NULL
       AND m.sender_id <> $1
       AND (cm.last_read_message_id IS NULL OR m.id > cm.last_read_message_id)
  WHERE cm.user_id = $1

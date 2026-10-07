@@ -1,6 +1,6 @@
 # Go VK Messenger
 
-Backend for a small messenger written in Go. It supports registration and login, JWT authentication, direct and group chats, PostgreSQL persistence, REST message history, search, WebSocket realtime delivery, read status, unread counters, rate limiting, Docker startup, and SQL migrations.
+Backend for a small messenger written in Go. It supports registration and login, JWT authentication, direct and group chats, PostgreSQL persistence, REST message history, search, message editing and deletion, WebSocket realtime delivery, read status, unread counters, rate limiting, Docker startup, and SQL migrations.
 
 Russian documentation is available in [README.ru.md](README.ru.md).
 
@@ -28,12 +28,16 @@ Messages:
 - PostgreSQL persistence;
 - cursor history pagination;
 - chat-scoped search.
+- author-only editing with `edited` / `edited_at`;
+- deletion for everyone with `deleted` / `deleted_at`, preserving message IDs and read cursors.
+- replies within a chat through REST and WebSocket, with a live preview of the original message.
 
 Realtime:
 
 - WebSocket endpoint;
 - multiple connections per user;
 - realtime `message_created`;
+- realtime `message_edited` and `message_deleted`;
 - realtime `read_updated`;
 - reconnect through REST history.
 
@@ -247,6 +251,10 @@ direct_chats
 messages
 ↓
 read-status
+↓
+message-edit-delete
+↓
+message-replies
 ```
 
 Commands:
@@ -258,6 +266,18 @@ make migrate-down
 ```
 
 The app binary does not run migrations itself. In Docker Compose, the one-shot `migrate` service applies migrations before `app` starts. In production, keep the same order: run migrations before starting the app version that needs the new schema.
+
+Message editing/deletion requires `20261007000100_add_message_edit_delete.sql`. Rebuild the migration image when upgrading an existing Docker environment so it includes the new SQL:
+
+```bash
+docker compose build migrate app
+docker compose run --rm migrate
+docker compose up -d app
+```
+
+The migration adds nullable `edited_at` and `deleted_at` columns; existing messages start unedited and undeleted. Deletion clears the stored content. Rolling this migration back replaces deleted content with `[deleted]` to preserve message IDs and read cursors; it cannot restore the original text.
+
+Replies additionally require `20261007000200_add_message_replies.sql`, applied by the same commands. It adds nullable `reply_to_message_id` and a composite foreign key that keeps replies within the same chat. Existing messages have no reply target. Rolling back this migration preserves messages but removes their reply links.
 
 ## Makefile
 
@@ -363,6 +383,8 @@ DELETE /api/v1/chats/{chatID}/members/{userID}
 POST /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages/search?q=hello
+PATCH  /api/v1/chats/{chatID}/messages/{messageID}
+DELETE /api/v1/chats/{chatID}/messages/{messageID}
 
 POST /api/v1/chats/{chatID}/read
 
@@ -510,11 +532,112 @@ Response:
   "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "content": "hello bob",
-  "created_at": "2026-09-24T10:00:00Z"
+  "created_at": "2026-09-24T10:00:00Z",
+  "edited": false,
+  "edited_at": null,
+  "deleted": false,
+  "deleted_at": null,
+  "reply_to_message_id": null,
+  "reply_to": null
 }
 ```
 
 After saving, online chat members receive `message_created`.
+
+All message objects (REST and WebSocket) also contain `edited`, `edited_at`, `deleted`, and `deleted_at`. New messages have both flags set to `false` and both timestamps set to `null`.
+
+### Reply to a message
+
+Use the existing send endpoint with the optional `reply_to_message_id`:
+
+```http
+POST /api/v1/chats/{chatID}/messages
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"content":"Yes, agreed","reply_to_message_id":123}
+```
+
+The WebSocket equivalent uses the existing `send_message` event:
+
+```json
+{
+  "type": "send_message",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "content": "Yes, agreed",
+    "reply_to_message_id": 123
+  }
+}
+```
+
+REST returns `201` and WebSocket returns `message_ack`, followed by the usual `message_created` broadcast. All message responses, history, search, and message events include two additional fields. For a reply they look like:
+
+```json
+{
+  "reply_to_message_id": 123,
+  "reply_to": {
+    "id": 123,
+    "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "content": "Shall we meet tomorrow?",
+    "edited": false,
+    "edited_at": null,
+    "deleted": false,
+    "deleted_at": null
+  }
+}
+```
+
+Omit `reply_to_message_id` or send `null` for an ordinary message; both response fields will be `null`. The target must exist, be undeleted, and belong to the same chat. Members may reply to their own or other members' messages, including replies. A reply still needs non-empty content, follows the normal 4000-character limit and rate limit, and counts as a new unread message for other members. Editing a reply changes only its content, not its target.
+
+`reply_to` is a one-level preview, without a nested reply chain. It is fetched from the current original message, including when that message is outside the requested history page. Editing the original updates subsequent previews; deleting it preserves existing replies but returns an empty preview content with `deleted: true`. New replies to deleted originals return `404 message_not_found`. Search matches the reply's own content, not its preview.
+
+Invalid non-positive target IDs return `400 invalid_message_id`; non-integer JSON values return `400 invalid_request` (WebSocket: `invalid_payload`). Missing or different-chat targets also return `404 message_not_found`. Non-members get `404 chat_not_found`; failed sends produce no ack or broadcast.
+
+Clients should update cached previews whose `reply_to_message_id` matches an incoming `message_edited` / `message_deleted` event. The server emits the original message's event, not a separate event for each reply. After reconnect, reload relevant history pages to refresh previews; do not retain a quote's old text after the original is deleted.
+
+### Edit message
+
+```http
+PATCH /api/v1/chats/{chatID}/messages/123
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"content":"hello bob, corrected"}
+```
+
+Response: `200 OK` with the updated message:
+
+```json
+{
+  "id": 123,
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "content": "hello bob, corrected",
+  "created_at": "2026-09-24T10:00:00Z",
+  "edited": true,
+  "edited_at": "2026-10-07T10:00:00Z",
+  "deleted": false,
+  "deleted_at": null,
+  "reply_to_message_id": null,
+  "reply_to": null
+}
+```
+
+Only the author, who must still be a chat member, can edit a message. Group admins cannot edit another author's message. Content must not be whitespace-only and must contain at most 4000 Unicode characters, as for sending. Each successful edit sets `edited_at` to the latest edit time, even if the content is unchanged. `id`, `sender_id`, and `created_at` remain unchanged; edits do not increase unread counts. History and search return the current text.
+
+### Delete message
+
+```http
+DELETE /api/v1/chats/{chatID}/messages/123
+Authorization: Bearer <JWT>
+```
+
+Response: `200 OK` with the message object: `content: ""`, `deleted: true`, and a non-null `deleted_at`. Existing edit metadata is preserved. The same author/member restrictions apply as for editing; deletion applies to everyone in the chat.
+
+The database keeps a tombstone with the original ID, sender, and creation time, but clears the text. History includes this tombstone so clients can display “Message deleted”, including after reconnect. Search and unread counts exclude deleted messages. Read cursors remain valid and can advance to a deleted message ID.
+
+Both endpoints return `400 invalid_message_id` for a non-positive or malformed ID, `404 chat_not_found` for non-members, `404 message_not_found` for a missing, deleted, or different-chat message, and `403 forbidden` for another author's message. Repeated deletion and editing after deletion return `404 message_not_found`.
 
 ### History
 
@@ -530,7 +653,13 @@ GET /api/v1/chats/{chatID}/messages?limit=50
       "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "content": "hello bob",
-      "created_at": "2026-09-24T10:00:00Z"
+      "created_at": "2026-09-24T10:00:00Z",
+      "edited": false,
+      "edited_at": null,
+      "deleted": false,
+      "deleted_at": null,
+      "reply_to_message_id": null,
+      "reply_to": null
     }
   ],
   "next_cursor": 120
@@ -667,7 +796,13 @@ Sent to the sending WebSocket client after the message is saved.
     "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "content": "hello",
-    "created_at": "2026-09-24T10:00:00Z"
+    "created_at": "2026-09-24T10:00:00Z",
+    "edited": false,
+    "edited_at": null,
+    "deleted": false,
+    "deleted_at": null,
+    "reply_to_message_id": null,
+    "reply_to": null
   }
 }
 ```
@@ -684,10 +819,43 @@ Broadcast to online chat members after a successful insert.
     "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "content": "hello",
-    "created_at": "2026-09-24T10:00:00Z"
+    "created_at": "2026-09-24T10:00:00Z",
+    "edited": false,
+    "edited_at": null,
+    "deleted": false,
+    "deleted_at": null,
+    "reply_to_message_id": null,
+    "reply_to": null
   }
 }
 ```
+
+### message_edited / message_deleted
+
+Editing and deletion are requested through REST (`PATCH` / `DELETE`); there are no WebSocket mutation commands for them. After the database change succeeds, all online chat members, including every connection of the author, receive an event with the full updated message:
+
+```json
+{
+  "type": "message_edited",
+  "data": {
+    "id": 123,
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "content": "hello bob, corrected",
+    "created_at": "2026-09-24T10:00:00Z",
+    "edited": true,
+    "edited_at": "2026-10-07T10:00:00Z",
+    "deleted": false,
+    "deleted_at": null,
+    "reply_to_message_id": null,
+    "reply_to": null
+  }
+}
+```
+
+For deletion, `type` is `message_deleted`, `data.content` is empty, `data.deleted` is `true`, and `data.deleted_at` is the deletion time. Clients should replace their cached message by ID, hide deleted content, and refresh chat unread counts after deletion. Concurrent requests can deliver events out of order: a deletion is final, so ignore later edit events for a deleted ID; for edits, keep the newest `edited_at`.
+
+As with creation, a broadcast failure does not roll back a saved change. There is no offline event queue: after reconnect, reload history pages containing cached messages to reconcile edits and deletions (fetching only newer IDs is insufficient).
 
 ### read_updated
 
@@ -751,6 +919,27 @@ Messages and realtime:
 - Alice sends through WebSocket;
 - Alice receives `message_ack`;
 - Bob receives `message_created`.
+
+Replies:
+
+- Bob sends `reply_to_message_id` referencing Alice's message through REST and WebSocket;
+- response/ack and `message_created` include the reply ID and the server's original-message preview;
+- load a history page without the original: the reply preview is still present;
+- edit/delete the original and reload history: its preview changes/clears, while the reply's own text remains;
+- missing, deleted, and different-chat targets are rejected without creating a message;
+- omit the target or send `null`: ordinary sending works as before.
+
+Editing and deletion:
+
+- Alice edits her message with `PATCH`; response is `200`, `edited = true`, and `edited_at` is set;
+- Alice and Bob receive `message_edited`; Carol, outside the chat, receives nothing;
+- Bob cannot edit/delete Alice's message (`403 forbidden`); Carol gets `404 chat_not_found`;
+- history/search show the edited content; the old text no longer matches;
+- Alice deletes the message with `DELETE`; response is `200` and members receive `message_deleted`;
+- history contains an empty tombstone; search excludes it; deleting an unread message reduces unread count;
+- deleting a message used as a read cursor preserves the cursor and does not resurrect old unread messages;
+- editing/deleting the tombstone returns `404 message_not_found`;
+- reconnect and reload the relevant history pages to see edits and tombstones.
 
 History and search:
 
@@ -821,11 +1010,18 @@ Suggested variables:
 base_url=http://localhost:8080
 alice_token=
 bob_token=
+carol_username=carol
+carol_token=
 alice_id=
 bob_id=
+carol_id=
 chat_id=
+group_chat_id=
+group_message_id=
 message_id=
 ```
+
+The collection includes direct chat creation, group chat creation, regular message flow, and a `Rate Limit` folder. Run the `Rate Limit` folder in Collection Runner without delay between requests; wait at least 5 seconds before rerunning it.
 
 For WebSocket testing, use two WebSocket tabs in Postman: Alice and Bob. Connect to `ws://localhost:8080/api/v1/ws` with the matching `Authorization` header.
 

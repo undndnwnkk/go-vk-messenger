@@ -18,6 +18,11 @@ const messageUser = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const messageChat = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 type messageRepoStub struct {
+	reply                        *model.MessageReply
+	message                      *model.Message
+	mutationCalled               bool
+	mutationErr                  error
+	messageID                    int64
 	called                       bool
 	createCount                  int
 	chat, sender, content, query string
@@ -27,10 +32,98 @@ type messageRepoStub struct {
 	err                          error
 }
 
-func (r *messageRepoStub) Create(_ context.Context, chat, sender, content string) (*model.Message, error) {
+func (r *messageRepoStub) GetByID(_ context.Context, chat string, id int64) (*model.Message, error) {
+	r.called, r.chat, r.messageID = true, chat, id
+	if r.message != nil {
+		return r.message, r.err
+	}
+	return &model.Message{ID: id, ChatID: chat, SenderID: messageUser}, r.err
+}
+
+func (r *messageRepoStub) Edit(_ context.Context, chat, sender string, id int64, content string) (*model.Message, error) {
+	r.mutationCalled, r.chat, r.sender, r.messageID, r.content = true, chat, sender, id, content
+	now := time.Now()
+	return &model.Message{ID: id, ChatID: chat, SenderID: sender, Content: content, Edited: true, EditedAt: &now}, r.mutationErr
+}
+
+func (r *messageRepoStub) Delete(_ context.Context, chat, sender string, id int64) (*model.Message, error) {
+	r.mutationCalled, r.chat, r.sender, r.messageID = true, chat, sender, id
+	now := time.Now()
+	return &model.Message{ID: id, ChatID: chat, SenderID: sender, Deleted: true, DeletedAt: &now}, r.mutationErr
+}
+
+func TestMessageMutations(t *testing.T) {
+	failure := errors.New("database failure")
+	for _, operation := range []string{"edit", "delete"} {
+		for _, tc := range []struct {
+			name                                  string
+			id                                    int64
+			message                               *model.Message
+			accessErr, repoErr, mutationErr, want error
+			read, mutate                          bool
+		}{
+			{name: "Author", id: 42, read: true, mutate: true},
+			{name: "InvalidID", id: 0, want: ErrInvalidMessageID},
+			{name: "NegativeID", id: -1, want: ErrInvalidMessageID},
+			{name: "OutsiderOrRemovedAuthor", id: 42, accessErr: repository.ErrChatNotFound, want: ErrChatNotFound},
+			{name: "AccessFailure", id: 42, accessErr: failure, want: failure},
+			{name: "MissingOrOtherChat", id: 42, repoErr: repository.ErrMessageNotFound, want: ErrMessageNotFound, read: true},
+			{name: "NotAuthor", id: 42, message: &model.Message{SenderID: "other"}, want: ErrNotMessageAuthor, read: true},
+			{name: "Deleted", id: 42, message: &model.Message{SenderID: messageUser, Deleted: true}, want: ErrMessageNotFound, read: true},
+			{name: "ReadFailure", id: 42, repoErr: failure, want: failure, read: true},
+			{name: "MutationFailure", id: 42, mutationErr: failure, want: failure, read: true, mutate: true},
+			{name: "ConcurrentDelete", id: 42, mutationErr: repository.ErrMessageNotFound, want: ErrMessageNotFound, read: true, mutate: true},
+		} {
+			t.Run(operation+tc.name, func(t *testing.T) {
+				repo := &messageRepoStub{message: tc.message, err: tc.repoErr, mutationErr: tc.mutationErr}
+				svc := messageTestService(repo, tc.accessErr)
+				var msg *model.Message
+				var err error
+				if operation == "edit" {
+					msg, err = svc.Edit(context.Background(), strings.ToUpper(messageUser), strings.ToUpper(messageChat), tc.id, model.EditMessageRequest{Content: " updated "})
+				} else {
+					msg, err = svc.Delete(context.Background(), strings.ToUpper(messageUser), strings.ToUpper(messageChat), tc.id)
+				}
+				if !errors.Is(err, tc.want) || repo.called != tc.read || repo.mutationCalled != tc.mutate {
+					t.Fatalf("err=%v read=%v mutate=%v", err, repo.called, repo.mutationCalled)
+				}
+				if tc.want == nil {
+					if msg.ID != 42 || repo.chat != messageChat || repo.sender != messageUser || repo.messageID != 42 {
+						t.Fatalf("message=%+v repo=%+v", msg, repo)
+					}
+					if operation == "edit" && (msg.Content != " updated " || !msg.Edited || msg.EditedAt == nil) {
+						t.Fatalf("edited message=%+v", msg)
+					}
+					if operation == "delete" && (msg.Content != "" || !msg.Deleted || msg.DeletedAt == nil) {
+						t.Fatalf("deleted message=%+v", msg)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestMessageEditContentValidation(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		want    error
+	}{
+		{"", ErrEmptyMessage}, {" \n\t", ErrEmptyMessage},
+		{strings.Repeat("я", 4001), ErrMessageTooLong},
+		{strings.Repeat("😀", 4000), nil},
+	} {
+		repo := &messageRepoStub{}
+		_, err := messageTestService(repo, nil).Edit(context.Background(), messageUser, messageChat, 1, model.EditMessageRequest{Content: tc.content})
+		if !errors.Is(err, tc.want) || repo.mutationCalled != (tc.want == nil) || repo.called != (tc.want == nil) {
+			t.Fatalf("err=%v called=%v mutated=%v", err, repo.called, repo.mutationCalled)
+		}
+	}
+}
+
+func (r *messageRepoStub) Create(_ context.Context, chat, sender, content string, replyToMessageID *int64) (*model.Message, error) {
 	r.called, r.chat, r.sender, r.content = true, chat, sender, content
 	r.createCount++
-	return &model.Message{ID: 1, ChatID: chat, SenderID: sender, Content: content}, r.err
+	return &model.Message{ID: 1, ChatID: chat, SenderID: sender, Content: content, ReplyToMessageID: replyToMessageID, ReplyTo: r.reply}, r.err
 }
 func (r *messageRepoStub) ListBefore(_ context.Context, chat string, before *int64, limit int) ([]model.Message, error) {
 	r.called, r.chat, r.before, r.limit = true, chat, before, limit

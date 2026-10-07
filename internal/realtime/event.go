@@ -13,6 +13,8 @@ const (
 	EventSendMessage    EventType = "send_message"
 	EventMessageAck     EventType = "message_ack"
 	EventMessageCreated EventType = "message_created"
+	EventMessageEdited  EventType = "message_edited"
+	EventMessageDeleted EventType = "message_deleted"
 	EventReadUpdated    EventType = "read_updated"
 )
 
@@ -30,8 +32,9 @@ type ErrorEvent struct {
 }
 
 type SendMessagePayload struct {
-	ChatID  string `json:"chat_id"`
-	Content string `json:"content"`
+	ChatID           string `json:"chat_id"`
+	Content          string `json:"content"`
+	ReplyToMessageID *int64 `json:"reply_to_message_id"`
 }
 
 func NewErrorEvent(code, message string) []byte {

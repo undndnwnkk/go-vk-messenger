@@ -1,6 +1,6 @@
 # Go VK Messenger
 
-Backend небольшого мессенджера на Go. В проекте есть регистрация и логин, JWT-аутентификация, direct/group chats, PostgreSQL persistence, REST history, поиск, WebSocket realtime delivery, read status, unread counters, rate limiting, Docker startup и SQL migrations.
+Backend небольшого мессенджера на Go. В проекте есть регистрация и логин, JWT-аутентификация, direct/group chats, PostgreSQL persistence, REST history, поиск, редактирование и удаление сообщений, WebSocket realtime delivery, read status, unread counters, rate limiting, Docker startup и SQL migrations.
 
 English documentation: [README.md](README.md).
 
@@ -28,12 +28,16 @@ Messages:
 - хранение в PostgreSQL;
 - cursor pagination для history;
 - поиск внутри чата.
+- редактирование своих сообщений с отметками `edited` / `edited_at`;
+- удаление своих сообщений для всех с отметками `deleted` / `deleted_at`, с сохранением ID и курсоров прочтения.
+- ответы на сообщения внутри чата через REST и WebSocket с актуальной цитатой оригинала.
 
 Realtime:
 
 - WebSocket endpoint;
 - несколько подключений одного пользователя;
 - realtime `message_created`;
+- realtime `message_edited` и `message_deleted`;
 - realtime `read_updated`;
 - восстановление после reconnect через REST history.
 
@@ -247,6 +251,10 @@ direct_chats
 messages
 ↓
 read-status
+↓
+message-edit-delete
+↓
+message-replies
 ```
 
 Команды:
@@ -363,6 +371,8 @@ DELETE /api/v1/chats/{chatID}/members/{userID}
 POST /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages
 GET  /api/v1/chats/{chatID}/messages/search?q=hello
+PATCH  /api/v1/chats/{chatID}/messages/{messageID}
+DELETE /api/v1/chats/{chatID}/messages/{messageID}
 
 POST /api/v1/chats/{chatID}/read
 
@@ -457,11 +467,124 @@ Response:
   "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "content": "hello bob",
-  "created_at": "2026-09-24T10:00:00Z"
+  "created_at": "2026-09-24T10:00:00Z",
+  "edited": false,
+  "edited_at": null,
+  "deleted": false,
+  "deleted_at": null,
+  "reply_to_message_id": null,
+  "reply_to": null
 }
 ```
 
 После сохранения online-участники чата получают `message_created`.
+
+Все объекты сообщений в REST и WebSocket также содержат `edited`, `edited_at`, `deleted`, `deleted_at`. Для нового сообщения флаги равны `false`, даты — `null`.
+
+### Ответ на сообщение (Reply)
+
+Для ответа используй существующий endpoint отправки с необязательным полем `reply_to_message_id`:
+
+```http
+POST /api/v1/chats/{chatID}/messages
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"content":"Да, договорились","reply_to_message_id":123}
+```
+
+Через WebSocket:
+
+```json
+{
+  "type": "send_message",
+  "data": {
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "content": "Да, договорились",
+    "reply_to_message_id": 123
+  }
+}
+```
+
+REST возвращает `201`, WebSocket — `message_ack`; участники получают обычный `message_created`. Во всех объектах сообщений, включая историю, поиск и события, добавлены два поля. Для ответа они выглядят так:
+
+```json
+{
+  "reply_to_message_id": 123,
+  "reply_to": {
+    "id": 123,
+    "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "content": "Встретимся завтра?",
+    "edited": false,
+    "edited_at": null,
+    "deleted": false,
+    "deleted_at": null
+  }
+}
+```
+
+Если не передавать `reply_to_message_id` или указать `null`, сообщение будет обычным: оба поля ответа равны `null`. Оригинал должен существовать, быть неудалённым и относиться к тому же чату. Можно отвечать на свои и чужие сообщения, в том числе на ответы. Текст ответа обязателен; действуют обычные ограничения на длину и частоту отправки. Ответ учитывается как новое непрочитанное сообщение для других участников. Редактирование ответа меняет только текст, но не ссылку на оригинал.
+
+`reply_to` содержит актуальную цитату на один уровень, без рекурсивной цепочки. Она доступна даже тогда, когда оригинал не попал на текущую страницу истории. После правки оригинала последующие загрузки возвращают исправленную цитату. После удаления оригинала ответы сохраняются, а у цитаты текст пустой и `deleted: true`. Новый ответ на удалённый оригинал запрещён (`404 message_not_found`). Поиск ищет по собственному тексту ответа, а не по цитате.
+
+Неположительный ID даёт `400 invalid_message_id`, неверный JSON-тип или дробное число — `400 invalid_request` (WebSocket: `invalid_payload`). Несуществующий оригинал или сообщение другого чата — `404 message_not_found`; отсутствие доступа к чату — `404 chat_not_found`. При ошибке сообщение не создаётся, ack и рассылки нет.
+
+При `message_edited` / `message_deleted` клиент обновляет цитаты, чей `reply_to_message_id` совпадает с ID изменённого сообщения. Сервер рассылает событие оригинала, без отдельного события для каждого ответа. После reconnect нужно перезагрузить соответствующие страницы истории; старый текст удалённого оригинала в цитатах сохранять нельзя.
+
+Нужна миграция `20261007000200_add_message_replies.sql`: примените `make migrate-up` или пересоберите Docker-образы и запустите миграции командами из раздела ниже. Миграция добавляет ссылку на оригинал и ограничение БД, запрещающее ссылки между чатами. У существующих сообщений ссылка изначально `NULL`. Откат сохраняет сообщения, но удаляет связи ответов.
+
+### Редактирование сообщения
+
+```http
+PATCH /api/v1/chats/{chatID}/messages/123
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"content":"Привет, исправленный текст"}
+```
+
+Ответ: `200 OK` с обновлённым сообщением:
+
+```json
+{
+  "id": 123,
+  "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "content": "Привет, исправленный текст",
+  "created_at": "2026-09-24T10:00:00Z",
+  "edited": true,
+  "edited_at": "2026-10-07T10:00:00Z",
+  "deleted": false,
+  "deleted_at": null,
+  "reply_to_message_id": null,
+  "reply_to": null
+}
+```
+
+Редактировать сообщение может только автор, который по-прежнему состоит в чате. Администратор группы не может редактировать чужие сообщения. Текст не должен состоять только из пробелов; максимум — 4000 Unicode-символов. Каждое успешное редактирование обновляет `edited_at`, даже если текст совпадает с прежним. ID, автор и `created_at` не меняются, счётчик непрочитанных не увеличивается. История и поиск возвращают актуальный текст.
+
+### Удаление сообщения
+
+```http
+DELETE /api/v1/chats/{chatID}/messages/123
+Authorization: Bearer <JWT>
+```
+
+Ответ: `200 OK` с объектом сообщения, у которого `content: ""`, `deleted: true`, `deleted_at` — время удаления. Отметки предыдущего редактирования сохраняются. Удаление доступно только автору — участнику чата и применяется для всех.
+
+Текст очищается в БД, но запись с исходными ID, автором и датой создания сохраняется. История возвращает её как заглушку для отображения «Сообщение удалено». Поиск и счётчик непрочитанных не учитывают удалённые сообщения. Курсор прочтения не сбрасывается; его можно продвинуть до ID удалённого сообщения.
+
+Ошибки обоих endpoints: `400 invalid_message_id` для некорректного или неположительного ID; `404 chat_not_found` для постороннего или исключённого участника; `404 message_not_found` для отсутствующего, удалённого или относящегося к другому чату сообщения; `403 forbidden` для чужого сообщения. Повторное удаление и редактирование после удаления возвращают `404 message_not_found`.
+
+Для обновления существующей Docker-установки сначала пересоберите образы и примените миграцию `20261007000100_add_message_edit_delete.sql`:
+
+```bash
+docker compose build migrate app
+docker compose run --rm migrate
+docker compose up -d app
+```
+
+Без Docker: `make migrate-up` перед запуском новой версии. Миграция добавляет `edited_at` и `deleted_at`; у существующих сообщений обе даты изначально `NULL`. Откат заменяет удалённый текст на `[deleted]`, сохраняя ID и курсоры; исходный текст восстановить нельзя.
 
 ### History
 
@@ -480,7 +603,13 @@ Response:
       "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "content": "hello bob",
-      "created_at": "2026-09-24T10:00:00Z"
+      "created_at": "2026-09-24T10:00:00Z",
+      "edited": false,
+      "edited_at": null,
+      "deleted": false,
+      "deleted_at": null,
+      "reply_to_message_id": null,
+      "reply_to": null
     }
   ],
   "next_cursor": 120
@@ -611,7 +740,13 @@ Sender всегда берётся из JWT. `sender_id` из payload игнор
     "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "content": "hello",
-    "created_at": "2026-09-24T10:00:00Z"
+    "created_at": "2026-09-24T10:00:00Z",
+    "edited": false,
+    "edited_at": null,
+    "deleted": false,
+    "deleted_at": null,
+    "reply_to_message_id": null,
+    "reply_to": null
   }
 }
 ```
@@ -619,6 +754,33 @@ Sender всегда берётся из JWT. `sender_id` из payload игнор
 ### message_created
 
 Рассылается online-участникам чата после успешного INSERT.
+
+### message_edited / message_deleted
+
+Редактирование и удаление выполняются через REST (`PATCH` / `DELETE`). WebSocket-команд для этих операций нет. После успешного сохранения все online-участники чата, включая все подключения автора, получают событие с полным обновлённым объектом сообщения:
+
+```json
+{
+  "type": "message_edited",
+  "data": {
+    "id": 123,
+    "chat_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "sender_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "content": "Привет, исправленный текст",
+    "created_at": "2026-09-24T10:00:00Z",
+    "edited": true,
+    "edited_at": "2026-10-07T10:00:00Z",
+    "deleted": false,
+    "deleted_at": null,
+    "reply_to_message_id": null,
+    "reply_to": null
+  }
+}
+```
+
+При удалении тип — `message_deleted`, `data.content` — пустая строка, `data.deleted` — `true`, `data.deleted_at` — время удаления. Клиент заменяет сообщение по ID, скрывает удалённый текст и обновляет счётчики чатов. При одновременных запросах события могут прийти не по порядку: удаление окончательно, последующие события редактирования такого ID нужно игнорировать; среди редактирований выбирать самое новое по `edited_at`.
+
+Ошибка рассылки не отменяет сохранённое изменение. Офлайн-очереди событий нет: после reconnect нужно перезагрузить страницы истории с закешированными сообщениями. Загрузки только новых ID недостаточно для получения пропущенных правок и удалений.
 
 ### read_updated
 
@@ -665,6 +827,18 @@ Malformed JSON и unsupported event type не закрывают connection. С�
 - Bob не может выполнять admin mutations.
 - Alice отправляет REST message, Bob получает `message_created`.
 - Alice отправляет WebSocket `send_message`, Alice получает `message_ack`, Bob получает `message_created`.
+- Bob отвечает на сообщение Alice через REST и WebSocket: ответ/ack и `message_created` содержат `reply_to_message_id` и цитату оригинала.
+- Страница истории с ответом содержит цитату, даже если оригинала на этой странице нет.
+- После правки/удаления оригинала повторная загрузка показывает обновлённую/пустую цитату; собственный текст ответа сохраняется.
+- Ответ на отсутствующее, удалённое или принадлежащее другому чату сообщение отклоняется.
+- Без `reply_to_message_id` или с `null` обычная отправка работает как прежде.
+- Alice редактирует своё сообщение через `PATCH`: `200`, `edited = true`, участники получают `message_edited`.
+- Bob не может изменить или удалить сообщение Alice (`403 forbidden`), Carol вне чата получает `404 chat_not_found`.
+- История и поиск показывают исправленный текст; поиск по старому тексту больше не находит сообщение.
+- Alice удаляет сообщение через `DELETE`: `200`, участники получают `message_deleted`, в истории остаётся пустая заглушка.
+- Удалённое сообщение исчезает из поиска и счётчика непрочитанных; курсор прочтения сохраняется.
+- Повторное удаление или редактирование удалённого сообщения возвращает `404 message_not_found`.
+- После reconnect перезагрузка соответствующих страниц истории показывает правки и удаления.
 - History работает с `limit`, `before_id`, `next_cursor`.
 - Search `q=hello` не возвращает сообщения другого чата.
 - Offline Bob не получает realtime, после reconnect забирает пропущенное через REST history.
@@ -688,11 +862,18 @@ Suggested variables:
 base_url=http://localhost:8080
 alice_token=
 bob_token=
+carol_username=carol
+carol_token=
 alice_id=
 bob_id=
+carol_id=
 chat_id=
+group_chat_id=
+group_message_id=
 message_id=
 ```
+
+В коллекции есть создание direct chat, создание group chat, обычный message flow и папка `Rate Limit`. Папку `Rate Limit` запускай через Collection Runner без задержек между запросами; перед повторным запуском подожди минимум 5 секунд.
 
 WebSocket удобнее проверить двумя WebSocket tabs в Postman: Alice и Bob.
 

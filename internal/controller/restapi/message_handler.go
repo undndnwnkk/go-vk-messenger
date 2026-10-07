@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
@@ -35,6 +36,55 @@ func (h *Handler) createMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusCreated, res)
+}
+
+func (h *Handler) editMessageHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
+		return
+	}
+	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageID"), 10, 64)
+	if err != nil || messageID <= 0 {
+		WriteServiceError(w, service.ErrInvalidMessageID)
+		return
+	}
+	var req model.EditMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	msg, err := h.message.Edit(r.Context(), userID, chi.URLParam(r, "chatID"), messageID, req)
+	if err != nil {
+		WriteServiceError(w, err)
+		return
+	}
+	if err := h.notifier.NotifyMessageUpdated(r.Context(), userID, realtime.EventMessageEdited, msg); err != nil {
+		log.Printf("http message edited broadcast failed: %v", err)
+	}
+	WriteJSON(w, http.StatusOK, msg)
+}
+
+func (h *Handler) deleteMessageHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
+		return
+	}
+	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageID"), 10, 64)
+	if err != nil || messageID <= 0 {
+		WriteServiceError(w, service.ErrInvalidMessageID)
+		return
+	}
+	msg, err := h.message.Delete(r.Context(), userID, chi.URLParam(r, "chatID"), messageID)
+	if err != nil {
+		WriteServiceError(w, err)
+		return
+	}
+	if err := h.notifier.NotifyMessageUpdated(r.Context(), userID, realtime.EventMessageDeleted, msg); err != nil {
+		log.Printf("http message deleted broadcast failed: %v", err)
+	}
+	WriteJSON(w, http.StatusOK, msg)
 }
 
 func (h *Handler) getMessagesHistoryHandler(w http.ResponseWriter, r *http.Request) {

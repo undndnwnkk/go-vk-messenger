@@ -64,7 +64,10 @@ func (h *Handler) handleWebSocketSendMessage(ctx context.Context, client *realti
 		return
 	}
 
-	msg, err := h.message.Send(ctx, userID, payload.ChatID, model.CreateMessageRequest{Content: payload.Content})
+	msg, err := h.message.Send(ctx, userID, payload.ChatID, model.CreateMessageRequest{
+		Content:          payload.Content,
+		ReplyToMessageID: payload.ReplyToMessageID,
+	})
 	if err != nil {
 		_, code, message := publicError(err)
 		client.Send(realtime.NewErrorEvent(code, message))

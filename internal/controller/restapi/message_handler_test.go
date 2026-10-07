@@ -21,6 +21,10 @@ const httpMessageUser = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const httpMessagePath = "/api/v1/chats/" + httpMessageChat + "/messages"
 
 type httpMessageRepo struct {
+	reply                        *model.MessageReply
+	message                      *model.Message
+	mutationErr                  error
+	mutated                      bool
 	called                       bool
 	chat, sender, content, query string
 	limit                        int
@@ -29,9 +33,29 @@ type httpMessageRepo struct {
 	err                          error
 }
 
-func (r *httpMessageRepo) Create(_ context.Context, chat, sender, content string) (*model.Message, error) {
+func (r *httpMessageRepo) GetByID(_ context.Context, chat string, id int64) (*model.Message, error) {
+	r.called = true
+	if r.message != nil {
+		return r.message, r.err
+	}
+	return &model.Message{ID: id, ChatID: chat, SenderID: httpMessageUser}, r.err
+}
+
+func (r *httpMessageRepo) Edit(_ context.Context, chat, sender string, id int64, content string) (*model.Message, error) {
+	r.mutated, r.chat, r.sender, r.content = true, chat, sender, content
+	now := time.Now().UTC()
+	return &model.Message{ID: id, ChatID: chat, SenderID: sender, Content: content, Edited: true, EditedAt: &now}, r.mutationErr
+}
+
+func (r *httpMessageRepo) Delete(_ context.Context, chat, sender string, id int64) (*model.Message, error) {
+	r.mutated, r.chat, r.sender = true, chat, sender
+	now := time.Now().UTC()
+	return &model.Message{ID: id, ChatID: chat, SenderID: sender, Deleted: true, DeletedAt: &now}, r.mutationErr
+}
+
+func (r *httpMessageRepo) Create(_ context.Context, chat, sender, content string, replyToMessageID *int64) (*model.Message, error) {
 	r.called, r.chat, r.sender, r.content = true, chat, sender, content
-	return &model.Message{ID: 1, ChatID: chat, SenderID: sender, Content: content}, r.err
+	return &model.Message{ID: 1, ChatID: chat, SenderID: sender, Content: content, ReplyToMessageID: replyToMessageID, ReplyTo: r.reply}, r.err
 }
 func (r *httpMessageRepo) ListBefore(_ context.Context, chat string, before *int64, limit int) ([]model.Message, error) {
 	r.called, r.chat, r.before, r.limit = true, chat, before, limit

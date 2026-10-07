@@ -77,7 +77,7 @@ func TestMessageRepositoryPostgres(t *testing.T) {
 	}
 	create := func(chatID, content string) *model.Message {
 		t.Helper()
-		msg, err := repo.Create(ctx, chatID, userID, content)
+		msg, err := repo.Create(ctx, chatID, userID, content, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,4 +205,6 @@ func TestMessageRepositoryPostgres(t *testing.T) {
 			t.Fatalf("expected empty search: %+v", page)
 		}
 	})
+	t.Run("EditDelete", func(t *testing.T) { testMessageMutationsPostgres(t, ctx, pool) })
+	t.Run("Replies", func(t *testing.T) { testMessageRepliesPostgres(t, ctx, pool) })
 }
