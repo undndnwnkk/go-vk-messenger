@@ -12,6 +12,7 @@ import (
 )
 
 type ChatRepositoryInterface interface {
+	SetMute(ctx context.Context, chatID, userID string, muted bool) (*model.ChatMuteState, bool, error)
 	CreateGroup(
 		ctx context.Context,
 		creatorID string,

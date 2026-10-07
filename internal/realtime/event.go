@@ -7,15 +7,17 @@ import (
 type EventType string
 
 const (
-	EventPing           EventType = "ping"
-	EventPong           EventType = "pong"
-	EventError          EventType = "error"
-	EventSendMessage    EventType = "send_message"
-	EventMessageAck     EventType = "message_ack"
-	EventMessageCreated EventType = "message_created"
-	EventMessageEdited  EventType = "message_edited"
-	EventMessageDeleted EventType = "message_deleted"
-	EventReadUpdated    EventType = "read_updated"
+	EventPing             EventType = "ping"
+	EventPong             EventType = "pong"
+	EventError            EventType = "error"
+	EventSendMessage      EventType = "send_message"
+	EventMessageAck       EventType = "message_ack"
+	EventMessageCreated   EventType = "message_created"
+	EventMessageEdited    EventType = "message_edited"
+	EventMessageDeleted   EventType = "message_deleted"
+	EventReadUpdated      EventType = "read_updated"
+	EventReactionsUpdated EventType = "reactions_updated"
+	EventChatMuteUpdated  EventType = "chat_mute_updated"
 )
 
 type Event struct {

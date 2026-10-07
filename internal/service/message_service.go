@@ -12,6 +12,7 @@ import (
 )
 
 type MessageRepositoryInterface interface {
+	SetReaction(ctx context.Context, chatID, userID string, messageID int64, reaction string, add bool) (*model.MessageReactions, bool, error)
 	GetByID(ctx context.Context, chatID string, messageID int64) (*model.Message, error)
 	Edit(ctx context.Context, chatID, senderID string, messageID int64, content string) (*model.Message, error)
 	Delete(ctx context.Context, chatID, senderID string, messageID int64) (*model.Message, error)

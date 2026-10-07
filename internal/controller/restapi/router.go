@@ -47,6 +47,7 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/", h.getChatsHandler)
 				r.Get("/{chatID}", h.getChatByIDHandler)
 				r.Post("/{chatID}/read", h.markChatReadHandler)
+				r.Patch("/{chatID}/mute", h.setChatMuteHandler)
 
 				r.Get("/{chatID}/members", h.getChatMembersHandler)
 				r.Route("/{chatID}/members", func(r chi.Router) {
@@ -60,6 +61,8 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Get("/{chatID}/messages/search", h.searchMessagesHandler)
 				r.Patch("/{chatID}/messages/{messageID}", h.editMessageHandler)
 				r.Delete("/{chatID}/messages/{messageID}", h.deleteMessageHandler)
+				r.Put("/{chatID}/messages/{messageID}/reactions/{reaction}", h.setReactionHandler)
+				r.Delete("/{chatID}/messages/{messageID}/reactions/{reaction}", h.setReactionHandler)
 			})
 
 			r.Get("/ws", h.webSocketHandler)
@@ -117,6 +120,8 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 
 func publicError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, service.ErrInvalidReaction):
+		return http.StatusBadRequest, "invalid_reaction", service.ErrInvalidReaction.Error()
 	case errors.Is(err, service.ErrEmptyMessage):
 		return http.StatusBadRequest, "empty_message", service.ErrEmptyMessage.Error()
 	case errors.Is(err, service.ErrMessageTooLong):

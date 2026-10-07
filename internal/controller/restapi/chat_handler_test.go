@@ -17,6 +17,9 @@ import (
 )
 
 type httpChatRepo struct {
+	muted       bool
+	muteVersion int64
+	muteCalled  bool
 	service.ChatRepositoryInterface
 	caller, chatID, target, title string
 	role                          model.ChatRole
@@ -48,7 +51,7 @@ func (r *httpChatRepo) GetByID(_ context.Context, id string) (*model.Chat, error
 func (r *httpChatRepo) GetByIDForUser(_ context.Context, id, user string) (*model.Chat, error) {
 	r.chatID = id
 	r.caller = user
-	return &model.Chat{ID: id}, r.err
+	return &model.Chat{ID: id, Muted: r.muted, MuteVersion: r.muteVersion}, r.err
 }
 func (r *httpChatRepo) ListByUser(_ context.Context, user string) ([]model.Chat, error) {
 	r.caller = user
@@ -258,7 +261,7 @@ func TestChatResponseJSON(t *testing.T) {
 		value any
 		keys  []string
 	}{
-		{model.Chat{}, []string{"id", "type", "title", "created_by", "created_at", "unread_count"}},
+		{model.Chat{}, []string{"id", "type", "title", "created_by", "created_at", "unread_count", "muted", "mute_version"}},
 		{model.ChatMember{}, []string{"chat_id", "user_id", "role", "joined_at"}},
 	} {
 		rec := httptest.NewRecorder()

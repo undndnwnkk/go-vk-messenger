@@ -207,4 +207,5 @@ func TestMessageRepositoryPostgres(t *testing.T) {
 	})
 	t.Run("EditDelete", func(t *testing.T) { testMessageMutationsPostgres(t, ctx, pool) })
 	t.Run("Replies", func(t *testing.T) { testMessageRepliesPostgres(t, ctx, pool) })
+	t.Run("Reactions", func(t *testing.T) { testMessageReactionsPostgres(t, ctx, pool) })
 }
