@@ -1,5 +1,8 @@
 # Go VK Messenger
 
+[![CI](https://github.com/undndnwnkk/go-vk-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/undndnwnkk/go-vk-messenger/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-74.4%25-brightgreen)
+
 Backend for a small messenger written in Go. It supports registration and login, JWT authentication, direct and group chats, PostgreSQL persistence, REST message history, search, message editing and deletion, WebSocket realtime delivery, read status, unread counters, rate limiting, Docker startup, and SQL migrations.
 
 Russian documentation is available in [README.ru.md](README.ru.md).
@@ -346,7 +349,20 @@ Checks:
 - `go test ./...`;
 - repository integration tests with PostgreSQL and `TEST_DATABASE_URL`;
 - `go test -race ./...`;
-- `go vet ./...`.
+- `go vet ./...`;
+- test coverage (the total is written to the run summary page);
+- two-replica smoke test: cross-replica delivery and the shared rate limit.
+
+Current coverage: **74.4%** of statements (`go test -coverprofile ./...`, including the `cmd/` entrypoints at 0%). Locally:
+
+```bash
+make cover                       # per-package and total coverage
+go tool cover -html=cover.out    # line-by-line report in the browser
+```
+
+Integration packages need `TEST_DATABASE_URL` and `TEST_REDIS_URL`; without them those tests are skipped and the number is lower.
+
+Shared rate limit check: 24 concurrent sends from one user, split between two replicas, give exactly **10 × HTTP 201 and 14 × HTTP 429** (limit 10 messages per 5 seconds, kept in Redis). `tests/infrastructure` asserts this in CI; `scripts/burst.sh` prints the status of every request — see the [infrastructure runbook](docs/infrastructure.md#проверка).
 
 ## Quality gate
 

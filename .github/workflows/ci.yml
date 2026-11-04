@@ -56,8 +56,12 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
-      - name: Unit tests
-        run: go test ./...
+      - name: Unit tests and coverage
+        run: |
+          go test -coverprofile=cover.out ./...
+          total=$(go tool cover -func=cover.out | tail -1 | awk '{print $NF}')
+          echo "Total coverage: $total"
+          echo "### Test coverage: $total" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Repository integration tests
         run: go test ./internal/repository/...

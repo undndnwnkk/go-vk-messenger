@@ -10,7 +10,7 @@ MIGRATIONS_DIR ?= ./migrations
 DB_URL = user=$(DB_USER) password=$(DB_PASSWORD) host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) sslmode=$(DB_SSLMODE)
 GOOSE = go run github.com/pressly/goose/v3/cmd/goose@latest
 
-.PHONY: run test test-race vet migrate-up migrate-down migrate-status migrate-create docker-build docker-up docker-down docker-logs docker-ps docker-migrate docker-reset
+.PHONY: run test test-race cover vet migrate-up migrate-down migrate-status migrate-create docker-build docker-up docker-down docker-logs docker-ps docker-migrate docker-reset
 
 run:
 	go run ./cmd/app
@@ -20,6 +20,10 @@ test:
 
 test-race:
 	go test -race ./...
+
+cover:
+	go test -coverprofile=cover.out ./...
+	go tool cover -func=cover.out | tail -1
 
 vet:
 	go vet ./...
