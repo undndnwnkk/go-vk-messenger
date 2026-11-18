@@ -1,0 +1,1059 @@
+openapi: 3.1.0
+info:
+  title: Go VK Messenger API
+  version: 1.0.0
+  description: |
+    REST API of the Go VK Messenger backend.
+
+    Source of truth: the chi router in `internal/controller/restapi/router.go`,
+    its handlers, and the validation rules in `internal/service`. Keep this file in
+    sync when handlers change; frontend API types are generated from it.
+
+    Conventions:
+    - IDs of users and chats are UUID strings; message IDs are positive int64
+      numbers (globally increasing, not per chat).
+    - Timestamps are RFC 3339 strings in UTC.
+    - List endpoints always return a JSON array (`[]` when empty), never `null`.
+    - Every error response uses the `Error` envelope. Exception: unknown routes
+      return chi's plain-text `404 page not found`.
+    - Browser access is governed by the `CORS_ALLOWED_ORIGINS` allowlist.
+
+    Realtime events are delivered over the WebSocket at `/api/v1/ws`. Their
+    payload schemas are under `components.schemas` (`WsClientEvent`,
+    `WsServerEvent`).
+servers:
+  - url: http://localhost:8080
+    description: Local (Docker Compose or `make run`)
+
+tags:
+  - name: health
+  - name: auth
+  - name: chats
+  - name: members
+  - name: messages
+  - name: reactions
+  - name: realtime
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Readiness check (alias of /ready)
+      operationId: getHealth
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/StatusOk' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness check (PostgreSQL and, if configured, Redis)
+      operationId: getReady
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/StatusOk' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /live:
+    get:
+      tags: [health]
+      summary: Liveness check (process only, no dependencies)
+      operationId: getLive
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/StatusOk' }
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a user and get an access token
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+            example: { username: alice, password: password-123 }
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400':
+          description: '`invalid_request`, `invalid_username`, `invalid_password`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`user_exists`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in and get an access token
+      description: Unknown username and wrong password both return `invalid_credentials`.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401':
+          description: '`invalid_credentials`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/chats:
+    get:
+      tags: [chats]
+      summary: List the current user's chats
+      description: Includes per-user unread counter, read position and mute state.
+      operationId: listChats
+      responses:
+        '200':
+          description: Chats of the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Chat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/direct:
+    post:
+      tags: [chats]
+      summary: Get or create a direct chat with another user
+      description: Idempotent. Returns the existing chat if one already exists, so the status is always 200.
+      operationId: createDirectChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDirectChatRequest' }
+      responses:
+        '200':
+          description: Direct chat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chat' }
+        '400':
+          description: '`invalid_request`, `invalid_id`, `same_user`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`user_not_found`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/group:
+    post:
+      tags: [chats]
+      summary: Create a group chat
+      description: The creator becomes `admin`. Duplicate IDs and the creator's own ID in `user_ids` are ignored.
+      operationId: createGroupChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGroupChatRequest' }
+      responses:
+        '201':
+          description: Group chat created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chat' }
+        '400':
+          description: '`invalid_request`, `invalid_title`, `invalid_id`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`user_not_found`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/{chatID}:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    get:
+      tags: [chats]
+      summary: Get a chat the current user belongs to
+      operationId: getChat
+      responses:
+        '200':
+          description: Chat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chat' }
+        '400': { $ref: '#/components/responses/InvalidID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/{chatID}/read:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    post:
+      tags: [chats]
+      summary: Mark the chat read up to a message
+      description: |
+        The read position only moves forward. When it advances, the other chat
+        members get a `read_updated` WebSocket event (the reader does not).
+      operationId: markChatRead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkReadRequest' }
+      responses:
+        '200':
+          description: Current read state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatReadState' }
+        '400':
+          description: '`invalid_request`, `invalid_id`, `invalid_message_id`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`chat_not_found`, `message_not_found`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/{chatID}/mute:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    patch:
+      tags: [chats]
+      summary: Mute or unmute a chat for the current user
+      description: |
+        Private to the current user. When the state changes, only the user's own
+        connections get a `chat_mute_updated` WebSocket event.
+      operationId: setChatMute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetChatMuteRequest' }
+      responses:
+        '200':
+          description: Current mute state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatMuteState' }
+        '400':
+          description: '`invalid_request` (muted must be a boolean), `invalid_id`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/chats/{chatID}/members:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    get:
+      tags: [members]
+      summary: List chat members
+      operationId: listChatMembers
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChatMember' }
+        '400': { $ref: '#/components/responses/InvalidID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/{chatID}/members/{userID}:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+      - $ref: '#/components/parameters/UserID'
+    post:
+      tags: [members]
+      summary: Add a member to a group chat (admin only)
+      operationId: addChatMember
+      responses:
+        '204': { description: Member added }
+        '400':
+          description: '`invalid_id`, `cannot_modify_direct`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: '`chat_not_found`, `user_not_found`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`already_member`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [members]
+      summary: Remove a member from a group chat (admin only)
+      operationId: removeChatMember
+      responses:
+        '204': { description: Member removed }
+        '400':
+          description: '`invalid_id`, `cannot_modify_direct`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: '`chat_not_found`, `member_not_found`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`cannot_remove_self`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/chats/{chatID}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    get:
+      tags: [messages]
+      summary: Message history, newest first, with cursor pagination
+      description: |
+        Pass `next_cursor` from the previous page as `before_id` to get older
+        messages. `next_cursor` is absent on the last page.
+      operationId: listMessages
+      parameters:
+        - name: limit
+          in: query
+          description: Page size. Values above 100 are capped at 100.
+          schema: { type: integer, minimum: 1, default: 50 }
+        - name: before_id
+          in: query
+          description: Return messages with an ID lower than this.
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Page of messages
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagePage' }
+        '400':
+          description: '`invalid_id`, `invalid_limit`, `invalid_cursor`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [messages]
+      summary: Send a message
+      description: |
+        Rate limited to 10 messages per user per 5 seconds (shared across replicas
+        when Redis is configured). On success, online chat members get a
+        `message_created` WebSocket event.
+      operationId: sendMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMessageRequest' }
+      responses:
+        '201':
+          description: Message saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400':
+          description: '`invalid_request`, `invalid_id`, `empty_message`, `message_too_long`, `invalid_message_id`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`chat_not_found`, `message_not_found` (reply target)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: '`rate_limited`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: '`service_unavailable` (rate limiter backend unavailable)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/v1/chats/{chatID}/messages/search:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+    get:
+      tags: [messages]
+      summary: Case-insensitive search within one chat
+      description: Substring match. Returns up to 50 matches, newest first; deleted messages are excluded.
+      operationId: searchMessages
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search text; must not be blank after trimming.
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Matching messages
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items: { $ref: '#/components/schemas/Message' }
+        '400':
+          description: '`invalid_id`, `empty_search_query`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/chats/{chatID}/messages/{messageID}:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+      - $ref: '#/components/parameters/MessageID'
+    patch:
+      tags: [messages]
+      summary: Edit own message
+      description: Online chat members get a `message_edited` WebSocket event.
+      operationId: editMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditMessageRequest' }
+      responses:
+        '200':
+          description: Updated message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400':
+          description: '`invalid_request`, `invalid_id`, `invalid_message_id`, `empty_message`, `message_too_long`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ChatOrMessageNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [messages]
+      summary: Delete own message (soft delete)
+      description: |
+        Returns the message with `deleted: true`, empty `content` and `deleted_at`
+        set. Online chat members get a `message_deleted` WebSocket event.
+      operationId: deleteMessage
+      responses:
+        '200':
+          description: Deleted message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400':
+          description: '`invalid_id`, `invalid_message_id`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ChatOrMessageNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/chats/{chatID}/messages/{messageID}/reactions/{reaction}:
+    parameters:
+      - $ref: '#/components/parameters/ChatID'
+      - $ref: '#/components/parameters/MessageID'
+      - name: reaction
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ReactionType' }
+    put:
+      tags: [reactions]
+      summary: Add the current user's reaction (idempotent)
+      description: When the state changes, chat members get a `reactions_updated` WebSocket event.
+      operationId: addReaction
+      responses:
+        '200': { $ref: '#/components/responses/ReactionsState' }
+        '400': { $ref: '#/components/responses/ReactionBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatOrMessageNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [reactions]
+      summary: Remove the current user's reaction (idempotent)
+      description: When the state changes, chat members get a `reactions_updated` WebSocket event.
+      operationId: removeReaction
+      responses:
+        '200': { $ref: '#/components/responses/ReactionsState' }
+        '400': { $ref: '#/components/responses/ReactionBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChatOrMessageNotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/ws:
+    get:
+      tags: [realtime]
+      summary: WebSocket for realtime events
+      description: |
+        Upgrade to WebSocket (`ws://` / `wss://`).
+
+        Authentication (one of):
+        - Browsers: pass the JWT as a subprotocol together with the application
+          subprotocol: `new WebSocket(url, ["messenger.v1", "bearer." + accessToken])`.
+          The server answers with `Sec-WebSocket-Protocol: messenger.v1` and never
+          echoes the token. Exactly one `bearer.*` entry is allowed.
+        - Other clients: `Authorization: Bearer <JWT>` header, as for REST. When
+          the header is present it wins; an invalid header is not retried with the
+          subprotocol.
+
+        Origin: same-host handshakes are always accepted; cross-origin ones only
+        from `CORS_ALLOWED_ORIGINS`.
+
+        Client → server frames: `WsClientEvent`. Server → client frames:
+        `WsServerEvent`. There is no offline queue; after reconnect, reload
+        history and the chat list to reconcile.
+      operationId: openWebSocket
+      security:
+        - bearerAuth: []
+        - bearerSubprotocol: []
+      parameters:
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: false
+          description: 'Browser auth: `messenger.v1, bearer.<JWT>`.'
+          schema: { type: string }
+          example: messenger.v1, bearer.eyJhbGciOiJIUzI1NiIs...
+      responses:
+        '101':
+          description: Switching protocols
+          headers:
+            Sec-WebSocket-Protocol:
+              description: '`messenger.v1` when the client offered it.'
+              schema: { type: string, const: messenger.v1 }
+        '400':
+          description: '`invalid_request`: `bearer.<JWT>` sent without the `messenger.v1` subprotocol'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'Cross-origin handshake from an origin not in `CORS_ALLOWED_ORIGINS` (plain-text body)' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from `/auth/register` or `/auth/login` (TTL from `JWT_TTL`, default 15m).
+    bearerSubprotocol:
+      type: apiKey
+      in: header
+      name: Sec-WebSocket-Protocol
+      description: |
+        WebSocket handshake only (`/api/v1/ws`): the same JWT sent as a
+        `bearer.<JWT>` subprotocol next to `messenger.v1`, because browsers
+        cannot set the Authorization header on a WebSocket.
+
+  parameters:
+    ChatID:
+      name: chatID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserID:
+      name: userID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MessageID:
+      name: messageID
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+
+  responses:
+    StatusOk:
+      description: OK
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Status' }
+    ServiceUnavailable:
+      description: '`service_unavailable`: a dependency is down'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidRequest:
+      description: '`invalid_request`: body is not valid JSON for this endpoint'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidID:
+      description: '`invalid_id`: path ID is not a UUID'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: '`missing_header`, `invalid_authorization`, `invalid_token`, `missing_user_id`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: '`forbidden`: not a group admin / not the message author'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ChatNotFound:
+      description: '`chat_not_found`: chat does not exist or the user is not a member'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ChatOrMessageNotFound:
+      description: '`chat_not_found`, `message_not_found` (also for already deleted messages)'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ReactionBadRequest:
+      description: '`invalid_id`, `invalid_message_id`, `invalid_reaction`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ReactionsState:
+      description: Current reactions of the message
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/MessageReactions' }
+    InternalError:
+      description: '`internal_error`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/ErrorBody' }
+      example:
+        error: { code: chat_not_found, message: chat not found }
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Stable machine-readable code; branch on this, not on `message`.
+            Known codes: invalid_request, missing_header, invalid_authorization,
+            invalid_token, missing_user_id, unauthorized, invalid_credentials,
+            invalid_username, invalid_password, user_exists, invalid_id,
+            user_not_found, same_user, invalid_title, chat_not_found,
+            member_not_found, already_member, cannot_remove_self,
+            cannot_modify_direct, forbidden, message_not_found, invalid_message_id,
+            empty_message, message_too_long, invalid_limit, invalid_cursor,
+            empty_search_query, invalid_reaction, rate_limited,
+            service_unavailable, internal_error, id_not_found.
+        message:
+          type: string
+          description: Human-readable, may change.
+
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: Trimmed and lower-cased by the server, then must match the pattern.
+          pattern: '^[a-z0-9_]{3,32}$'
+        password:
+          type: string
+          description: 8 to 72 bytes (bcrypt limit).
+          minLength: 8
+          maxLength: 72
+    TokenResponse:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: Bearer }
+    User:
+      type: object
+      required: [id, username, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ChatType:
+      type: string
+      enum: [direct, group]
+    ChatRole:
+      type: string
+      enum: [admin, member]
+    Chat:
+      type: object
+      description: A chat as seen by the current user (unread/mute fields are per user).
+      required: [id, type, title, created_by, created_at, unread_count, muted, mute_version]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/ChatType' }
+        title:
+          type: [string, 'null']
+          description: Group title; `null` for direct chats.
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        last_read_message_id:
+          type: integer
+          format: int64
+          description: Omitted until the user marks something read.
+        unread_count: { type: integer, format: int64, minimum: 0 }
+        muted: { type: boolean }
+        mute_version:
+          type: integer
+          format: int64
+          description: Increases on every mute change; ignore older `chat_mute_updated` events.
+    ChatMember:
+      type: object
+      required: [chat_id, user_id, role, joined_at]
+      properties:
+        chat_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/ChatRole' }
+        joined_at: { type: string, format: date-time }
+        last_read_message_id:
+          type: integer
+          format: int64
+          description: Omitted until the member marks something read.
+    CreateDirectChatRequest:
+      type: object
+      required: [user2_id]
+      properties:
+        user2_id:
+          type: string
+          format: uuid
+          description: The other user; must differ from the current user.
+    CreateGroupChatRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: 1 to 100 characters after trimming.
+          minLength: 1
+          maxLength: 100
+        user_ids:
+          type: array
+          description: Initial members besides the creator.
+          items: { type: string, format: uuid }
+    MarkReadRequest:
+      type: object
+      required: [message_id]
+      properties:
+        message_id: { type: integer, format: int64, minimum: 1 }
+    ChatReadState:
+      type: object
+      required: [chat_id, user_id, last_read_message_id]
+      properties:
+        chat_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        last_read_message_id: { type: integer, format: int64 }
+    SetChatMuteRequest:
+      type: object
+      required: [muted]
+      properties:
+        muted: { type: boolean }
+    ChatMuteState:
+      type: object
+      required: [chat_id, muted, mute_version]
+      properties:
+        chat_id: { type: string, format: uuid }
+        muted: { type: boolean }
+        mute_version: { type: integer, format: int64 }
+
+    Message:
+      type: object
+      required:
+        - id
+        - chat_id
+        - sender_id
+        - content
+        - created_at
+        - edited
+        - edited_at
+        - deleted
+        - deleted_at
+        - reply_to_message_id
+        - reply_to
+        - reactions_version
+        - reactions
+      properties:
+        id: { type: integer, format: int64 }
+        chat_id: { type: string, format: uuid }
+        sender_id: { type: string, format: uuid }
+        content:
+          type: string
+          description: Empty string when `deleted` is true.
+        created_at: { type: string, format: date-time }
+        edited: { type: boolean }
+        edited_at: { type: [string, 'null'], format: date-time }
+        deleted: { type: boolean }
+        deleted_at: { type: [string, 'null'], format: date-time }
+        reply_to_message_id: { type: [integer, 'null'], format: int64 }
+        reply_to:
+          description: Live one-level preview of the replied message, `null` if not a reply.
+          oneOf:
+            - $ref: '#/components/schemas/MessageReply'
+            - type: 'null'
+        reactions_version:
+          type: integer
+          format: int64
+          description: Increases on every reaction change; keep the largest seen.
+        reactions:
+          type: array
+          items: { $ref: '#/components/schemas/ReactionSummary' }
+    MessageReply:
+      type: object
+      required: [id, sender_id, content, edited, edited_at, deleted, deleted_at]
+      properties:
+        id: { type: integer, format: int64 }
+        sender_id: { type: string, format: uuid }
+        content: { type: string }
+        edited: { type: boolean }
+        edited_at: { type: [string, 'null'], format: date-time }
+        deleted: { type: boolean }
+        deleted_at: { type: [string, 'null'], format: date-time }
+    MessagePage:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          description: Newest first.
+          items: { $ref: '#/components/schemas/Message' }
+        next_cursor:
+          type: integer
+          format: int64
+          description: Pass as `before_id` for the next (older) page; absent on the last page.
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: Not blank after trimming; at most 4000 characters (Unicode code points).
+          minLength: 1
+          maxLength: 4000
+        reply_to_message_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: ID of a message in the same chat.
+    EditMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: Same rules as when sending.
+          minLength: 1
+          maxLength: 4000
+
+    ReactionType:
+      type: string
+      enum: [like, heart, laugh, wow, sad, angry]
+    ReactionSummary:
+      type: object
+      required: [reaction, count, user_ids]
+      properties:
+        reaction: { $ref: '#/components/schemas/ReactionType' }
+        count: { type: integer, format: int64 }
+        user_ids:
+          type: array
+          items: { type: string, format: uuid }
+    MessageReactions:
+      type: object
+      required: [chat_id, message_id, reactions_version, reactions]
+      properties:
+        chat_id: { type: string, format: uuid }
+        message_id: { type: integer, format: int64 }
+        reactions_version: { type: integer, format: int64 }
+        reactions:
+          type: array
+          items: { $ref: '#/components/schemas/ReactionSummary' }
+
+    # ---- WebSocket frames (/api/v1/ws) ----
+    WsClientEvent:
+      description: Frames the client may send.
+      oneOf:
+        - $ref: '#/components/schemas/WsPing'
+        - $ref: '#/components/schemas/WsSendMessage'
+      discriminator:
+        propertyName: type
+        mapping:
+          ping: '#/components/schemas/WsPing'
+          send_message: '#/components/schemas/WsSendMessage'
+    WsPing:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: ping }
+    WsSendMessage:
+      type: object
+      description: Same validation and rate limit as `POST /chats/{chatID}/messages`. The sender is taken from the token.
+      required: [type, data]
+      properties:
+        type: { type: string, const: send_message }
+        data:
+          type: object
+          required: [chat_id, content]
+          properties:
+            chat_id: { type: string, format: uuid }
+            content: { type: string, minLength: 1, maxLength: 4000 }
+            reply_to_message_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+
+    WsServerEvent:
+      description: Frames the server sends.
+      oneOf:
+        - $ref: '#/components/schemas/WsPong'
+        - $ref: '#/components/schemas/WsError'
+        - $ref: '#/components/schemas/WsMessageAck'
+        - $ref: '#/components/schemas/WsMessageCreated'
+        - $ref: '#/components/schemas/WsMessageEdited'
+        - $ref: '#/components/schemas/WsMessageDeleted'
+        - $ref: '#/components/schemas/WsReadUpdated'
+        - $ref: '#/components/schemas/WsReactionsUpdated'
+        - $ref: '#/components/schemas/WsChatMuteUpdated'
+      discriminator:
+        propertyName: type
+        mapping:
+          pong: '#/components/schemas/WsPong'
+          error: '#/components/schemas/WsError'
+          message_ack: '#/components/schemas/WsMessageAck'
+          message_created: '#/components/schemas/WsMessageCreated'
+          message_edited: '#/components/schemas/WsMessageEdited'
+          message_deleted: '#/components/schemas/WsMessageDeleted'
+          read_updated: '#/components/schemas/WsReadUpdated'
+          reactions_updated: '#/components/schemas/WsReactionsUpdated'
+          chat_mute_updated: '#/components/schemas/WsChatMuteUpdated'
+    WsPong:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: pong }
+    WsError:
+      type: object
+      description: Error for a client frame. Codes are the REST error codes plus `unsupported_event` and `invalid_payload`.
+      required: [type, error]
+      properties:
+        type: { type: string, const: error }
+        error: { $ref: '#/components/schemas/ErrorBody' }
+    WsMessageAck:
+      type: object
+      description: Sent only to the connection that sent `send_message`, after the message is saved.
+      required: [type, data]
+      properties:
+        type: { type: string, const: message_ack }
+        data: { $ref: '#/components/schemas/Message' }
+    WsMessageCreated:
+      type: object
+      description: Sent to online chat members after a message is saved (REST or WebSocket).
+      required: [type, data]
+      properties:
+        type: { type: string, const: message_created }
+        data: { $ref: '#/components/schemas/Message' }
+    WsMessageEdited:
+      type: object
+      required: [type, data]
+      properties:
+        type: { type: string, const: message_edited }
+        data: { $ref: '#/components/schemas/Message' }
+    WsMessageDeleted:
+      type: object
+      description: '`data.deleted` is true and `data.content` is empty. A deletion is final.'
+      required: [type, data]
+      properties:
+        type: { type: string, const: message_deleted }
+        data: { $ref: '#/components/schemas/Message' }
+    WsReadUpdated:
+      type: object
+      description: Sent to the other online members when a member's read position advances.
+      required: [type, data]
+      properties:
+        type: { type: string, const: read_updated }
+        data: { $ref: '#/components/schemas/ChatReadState' }
+    WsReactionsUpdated:
+      type: object
+      required: [type, data]
+      properties:
+        type: { type: string, const: reactions_updated }
+        data: { $ref: '#/components/schemas/MessageReactions' }
+    WsChatMuteUpdated:
+      type: object
+      description: Sent only to the muting user's own connections.
+      required: [type, data]
+      properties:
+        type: { type: string, const: chat_mute_updated }
+        data: { $ref: '#/components/schemas/ChatMuteState' }

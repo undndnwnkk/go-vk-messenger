@@ -1,4 +1,3 @@
-# Apply and wait for completion BEFORE deploying a version that needs new schema.
 apiVersion: batch/v1
 kind: Job
 metadata:

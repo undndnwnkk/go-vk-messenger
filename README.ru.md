@@ -129,10 +129,10 @@ Redis Pub/Sub связывает локальные WebSocket Hub несколь
 - /live проверяет процесс; /ready и /health — PostgreSQL и настроенный Redis. Метрики работают на отдельном внутреннем listener.
 
 ```bash
-docker compose --profile monitoring up -d --build
+docker compose --env-file backend/.env --profile monitoring up -d --build
 ```
 
-Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD из .env, демо-пароль messenger-demo). Prometheus: http://localhost:9091. Порты мониторинга привязаны к localhost, Redis не публикует порт на хост.
+Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD из backend/.env, демо-пароль messenger-demo). Prometheus: http://localhost:9091. Порты мониторинга привязаны к localhost, Redis не публикует порт на хост.
 
 Настройки: REDIS_URL (пустой локально, redis://redis:6379/0 в Compose), REDIS_PREFIX (messenger), METRICS_ADDR (127.0.0.1:9090 локально; :9090 в контейнерах). Всем репликам нужны одинаковые БД, префикс Redis и JWT secret. При отказе Redis readiness и отправка сообщений возвращают 503; пропущенные Pub/Sub события восстанавливаются через REST.
 
@@ -141,20 +141,31 @@ Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD из .env, дем
 ## Структура проекта
 
 ```text
-cmd/app/                 entrypoint приложения
-internal/config/         загрузка и валидация environment config
-internal/controller/     HTTP и WebSocket handlers
-internal/model/          DTOs и domain models
-internal/realtime/       Client, Hub, WebSocket events
-internal/repository/     PostgreSQL repositories
-internal/service/        business logic
-migrations/              goose SQL migrations
-.github/workflows/       CI workflow
+backend/                     Go module (go.mod, Dockerfile, .env)
+  api/openapi.yaml           OpenAPI 3.1 spec (REST + WebSocket event schemas)
+  cmd/app/                   application entrypoint
+  cmd/migrate/               migration runner
+  internal/config/           environment config loading and validation
+  internal/controller/       HTTP and WebSocket handlers
+  internal/model/            DTOs and domain models
+  internal/realtime/         Client, Hub, WebSocket events
+  internal/repository/       PostgreSQL repositories
+  internal/service/          business logic
+  internal/health/           dependency readiness checks
+  internal/observability/    Prometheus registry and HTTP middleware
+  migrations/                goose SQL migrations
+  tests/infrastructure/      opt-in smoke test against two running replicas
+  scripts/                   rate limit burst script
+deploy/                      Kubernetes manifests and monitoring provisioning
+docker-compose.yml           local stack; builds images from ./backend
+.github/workflows/           CI workflow
 ```
+
+Go-команды (`go run`, `go test`, goose) выполняются из `backend/`. Цели `make` запускаются из корня репозитория.
 
 ## Требования
 
-- Go версии из [go.mod](go.mod).
+- Go версии из [backend/go.mod](backend/go.mod).
 - Docker и Docker Compose.
 - PostgreSQL для запуска без Docker.
 - GNU Make для удобных команд или прямые Go/Docker команды.
@@ -172,7 +183,7 @@ go run github.com/pressly/goose/v3/cmd/goose@latest
 Создай локальный env файл:
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
 Development defaults:
@@ -191,11 +202,17 @@ HTTP_PORT=8080
 
 JWT_SECRET=dev-secret-change-me
 JWT_TTL=15m
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
+
+`CORS_ALLOWED_ORIGINS` — список разрешённых browser origins через запятую (`scheme://host[:port]`, точное совпадение). Разрешённые origins получают `Access-Control-Allow-Origin` и ответы на preflight (методы `GET, POST, PUT, PATCH, DELETE`, заголовки `Authorization, Content-Type`); остальные — без CORS-заголовков. Wildcard и пути отклоняются при старте. Credentials mode выключен: API использует заголовок `Authorization`, а не cookies. Пустое значение (по умолчанию) отключает CORS.
 
 Для Docker Compose app container переопределяет `DB_HOST=db`, потому что внутри docker network PostgreSQL доступен по имени service, а не через `localhost`. Для PostgreSQL 18 named volume монтируется в `/var/lib/postgresql`, что соответствует актуальному data root layout официального image PostgreSQL 18+.
 
 Нельзя коммитить реальные production passwords, JWT secrets, access tokens, deployment credentials, dumps, logs и `.env`. `.env` находится в `.gitignore`.
+
+Docker Compose передаёт `backend/.env` в контейнеры. Для подстановки `${VAR}` внутри `docker-compose.yml` (учётные данные БД, порты, пароль Grafana) передавай `--env-file backend/.env`; корневые цели `make docker-*` делают это автоматически.
 
 Startup validation:
 
@@ -208,8 +225,8 @@ Startup validation:
 ```bash
 git clone <repository-url>
 cd go-vk-messenger
-cp .env.example .env
-docker compose up -d --build
+cp backend/.env.example backend/.env
+docker compose --env-file backend/.env up -d --build
 curl http://localhost:8080/health
 ```
 
@@ -239,7 +256,7 @@ docker compose run --rm migrate
 
 ## Запуск без Docker
 
-Подними PostgreSQL сам и настрой `.env`.
+Подними PostgreSQL сам и настрой `backend/.env`. Команды `make` запускаются из корня репозитория:
 
 ```bash
 make migrate-up
@@ -249,6 +266,7 @@ make run
 Эквивалентные прямые команды:
 
 ```bash
+cd backend
 go run github.com/pressly/goose/v3/cmd/goose@latest -dir ./migrations postgres "user=postgres password=postgres host=127.0.0.1 port=5432 dbname=messenger_db sslmode=disable" up
 go run ./cmd/app
 ```
@@ -261,7 +279,7 @@ http://localhost:8080
 
 ## Миграции
 
-Миграции лежат в [migrations](migrations). Ожидаемый порядок:
+Миграции лежат в [backend/migrations](backend/migrations). Ожидаемый порядок:
 
 ```text
 users
@@ -323,7 +341,7 @@ Makefile написан под GNU Make на Linux/macOS. Docker startup не з
 
 GitHub Actions workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
-Он запускается на pull request в `main` и на push в `main`.
+Он запускается на pull request в `main` и на push в `main`, если затронуты `backend/` или сам workflow. Все шаги выполняются с рабочей директорией `backend/`.
 
 Проверки:
 
@@ -344,13 +362,14 @@ go tool cover -html=cover.out    # построчный отчёт в брауз
 
 Интеграционным пакетам нужны `TEST_DATABASE_URL` и `TEST_REDIS_URL`; без них эти тесты пропускаются и итог ниже.
 
-Проверка общего rate limit: 24 параллельные отправки от одного пользователя, поровну на две реплики, дают ровно **10 × HTTP 201 и 14 × HTTP 429** (лимит 10 сообщений за 5 секунд хранится в Redis). В CI это проверяет `tests/infrastructure`; `scripts/burst.sh` печатает статус каждого запроса — см. [инструкцию по инфраструктуре](docs/infrastructure.md#проверка).
+Проверка общего rate limit: 24 параллельные отправки от одного пользователя, поровну на две реплики, дают ровно **10 × HTTP 201 и 14 × HTTP 429** (лимит 10 сообщений за 5 секунд хранится в Redis). В CI это проверяет `backend/tests/infrastructure`; `backend/scripts/burst.sh` печатает статус каждого запроса — см. [инструкцию по инфраструктуре](docs/infrastructure.md#проверка).
 
 ## Quality gate
 
-Перед release:
+Перед release (из `backend/`):
 
 ```bash
+cd backend
 go test ./...
 go vet ./...
 go test -race ./...
@@ -378,6 +397,8 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/messenger_test?ssl
 ```
 
 ## REST API
+
+Машиночитаемая спецификация: [backend/api/openapi.yaml](backend/api/openapi.yaml) (OpenAPI 3.1, включая схемы WebSocket-событий). `TestOpenAPICoversRouter` падает, если какой-то маршрут в ней не описан.
 
 Public endpoints:
 
@@ -799,11 +820,20 @@ Endpoint:
 GET /api/v1/ws
 ```
 
-JWT обязателен:
+JWT обязателен. Браузер не умеет ставить заголовки на WebSocket, поэтому передаёт токен как subprotocol рядом с прикладным subprotocol `messenger.v1`:
+
+```js
+const ws = new WebSocket("ws://localhost:8080/api/v1/ws", ["messenger.v1", "bearer." + accessToken]);
+// ws.protocol === "messenger.v1"; токен сервер обратно не отправляет
+```
+
+Остальные клиенты (Postman, CLI, тесты) могут по-прежнему использовать заголовок:
 
 ```text
 Authorization: Bearer <JWT>
 ```
+
+Если заголовок есть, используется он; невалидный заголовок отклоняется без fallback на subprotocol. `bearer.<JWT>` без `messenger.v1` возвращает 400. Cross-origin handshake принимается только с origins из `CORS_ALLOWED_ORIGINS` (иначе 403); same-host handshake принимается всегда. См. [ADR 0002](docs/adr/0002-websocket-auth-via-subprotocol.md).
 
 Local URL:
 

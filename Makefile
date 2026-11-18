@@ -5,28 +5,30 @@ DB_HOST ?= 127.0.0.1
 DB_PORT ?= 5432
 DB_NAME ?= messenger_db
 DB_SSLMODE ?= disable
-MIGRATIONS_DIR ?= ./migrations
+MIGRATIONS_DIR ?= ./backend/migrations
 
 DB_URL = user=$(DB_USER) password=$(DB_PASSWORD) host=$(DB_HOST) port=$(DB_PORT) dbname=$(DB_NAME) sslmode=$(DB_SSLMODE)
 GOOSE = go run github.com/pressly/goose/v3/cmd/goose@latest
+BACKEND = cd backend &&
+COMPOSE = docker compose $(if $(wildcard backend/.env),--env-file backend/.env)
 
 .PHONY: run test test-race cover vet migrate-up migrate-down migrate-status migrate-create docker-build docker-up docker-down docker-logs docker-ps docker-migrate docker-reset
 
 run:
-	go run ./cmd/app
+	$(BACKEND) go run ./cmd/app
 
 test:
-	go test ./...
+	$(BACKEND) go test ./...
 
 test-race:
-	go test -race ./...
+	$(BACKEND) go test -race ./...
 
 cover:
-	go test -coverprofile=cover.out ./...
-	go tool cover -func=cover.out | tail -1
+	$(BACKEND) go test -coverprofile=cover.out ./...
+	$(BACKEND) go tool cover -func=cover.out | tail -1
 
 vet:
-	go vet ./...
+	$(BACKEND) go vet ./...
 
 migrate-up:
 	$(GOOSE) -dir "$(MIGRATIONS_DIR)" "$(DB_DRIVER)" "$(DB_URL)" up
@@ -41,22 +43,22 @@ migrate-create:
 	$(GOOSE) -dir "$(MIGRATIONS_DIR)" create "$(name)" sql
 
 docker-build:
-	docker compose build
+	$(COMPOSE) build
 
 docker-up:
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 docker-migrate:
-	docker compose run --rm migrate
+	$(COMPOSE) run --rm migrate
 
 docker-down:
-	docker compose down
+	$(COMPOSE) down
 
 docker-reset:
-	docker compose down -v
+	$(COMPOSE) down -v
 
 docker-logs:
-	docker compose logs -f app
+	$(COMPOSE) logs -f app
 
 docker-ps:
-	docker compose ps
+	$(COMPOSE) ps

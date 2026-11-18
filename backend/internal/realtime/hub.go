@@ -1,0 +1,133 @@
+package realtime
+
+import (
+	"log"
+	"sync"
+	"sync/atomic"
+
+	"github.com/coder/websocket"
+)
+
+type Hub struct {
+	clients         map[string]map[*Client]struct{}
+	mux             sync.RWMutex
+	publish         func([]string, []byte) error
+	slowClients     atomic.Uint64
+	publishFailures atomic.Uint64
+}
+
+func NewHub() *Hub {
+	return &Hub{clients: make(map[string]map[*Client]struct{})}
+}
+
+func (h *Hub) Register(client *Client) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	if h.clients[client.userID] == nil {
+		h.clients[client.userID] = make(map[*Client]struct{})
+	}
+
+	h.clients[client.userID][client] = struct{}{}
+}
+
+func (h *Hub) Unregister(client *Client) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	delete(h.clients[client.userID], client)
+
+	if len(h.clients[client.userID]) == 0 {
+		delete(h.clients, client.userID)
+	}
+}
+
+func (h *Hub) ConnectionCount(userID string) int {
+	h.mux.RLock()
+	defer h.mux.RUnlock()
+	return len(h.clients[userID])
+}
+
+func (h *Hub) SendToUser(userID string, data []byte) {
+	h.SendToUsers([]string{userID}, data)
+}
+
+func (h *Hub) SetPublisher(publish func([]string, []byte) error) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	h.publish = publish
+}
+
+func (h *Hub) sendLocal(userID string, data []byte) {
+	clients := h.clientsForUser(userID)
+	for _, client := range clients {
+		if client.Send(data) {
+			continue
+		}
+		h.Unregister(client)
+		h.slowClients.Add(1)
+		client.Close(websocket.StatusPolicyViolation, "slow client")
+	}
+}
+
+func (h *Hub) SendToUsers(userIDs []string, data []byte) {
+	seen := make(map[string]bool, len(userIDs))
+	unique := make([]string, 0, len(userIDs))
+	for _, userID := range userIDs {
+		if !seen[userID] {
+			seen[userID] = true
+			unique = append(unique, userID)
+			h.sendLocal(userID, data)
+		}
+	}
+	h.mux.RLock()
+	publish := h.publish
+	h.mux.RUnlock()
+	if publish != nil && len(unique) > 0 {
+		if err := publish(unique, data); err != nil {
+			h.publishFailures.Add(1)
+			log.Printf("realtime publication failed; clients should reload history: %v", err)
+		}
+	}
+}
+
+func (h *Hub) Shutdown() {
+	clients := h.allClients()
+	for _, client := range clients {
+		client.Close(websocket.StatusNormalClosure, "server shutdown")
+	}
+}
+
+func (h *Hub) TotalConnections() float64 {
+	h.mux.RLock()
+	defer h.mux.RUnlock()
+	count := 0
+	for _, clients := range h.clients {
+		count += len(clients)
+	}
+	return float64(count)
+}
+
+func (h *Hub) SlowClients() float64     { return float64(h.slowClients.Load()) }
+func (h *Hub) PublishFailures() float64 { return float64(h.publishFailures.Load()) }
+
+func (h *Hub) clientsForUser(userID string) []*Client {
+	h.mux.RLock()
+	defer h.mux.RUnlock()
+	clients := make([]*Client, 0, len(h.clients[userID]))
+	for client := range h.clients[userID] {
+		clients = append(clients, client)
+	}
+	return clients
+}
+
+func (h *Hub) allClients() []*Client {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	clients := make([]*Client, 0)
+	for _, userClients := range h.clients {
+		for client := range userClients {
+			clients = append(clients, client)
+		}
+	}
+	h.clients = make(map[string]map[*Client]struct{})
+	return clients
+}

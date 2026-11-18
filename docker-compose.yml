@@ -29,11 +29,11 @@ services:
   migrate:
     container_name: messenger-migrate
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
       target: migrate
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -46,11 +46,11 @@ services:
   app:
     container_name: go-messenger-app
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
       target: app
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       DB_HOST: db
       DB_PORT: 5432
