@@ -142,6 +142,7 @@ Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD из backend/.env
 
 ```text
 backend/                     Go module (go.mod, Dockerfile, .env)
+  api/openapi.yaml           OpenAPI 3.1 spec (REST + WebSocket event schemas)
   cmd/app/                   application entrypoint
   cmd/migrate/               migration runner
   internal/config/           environment config loading and validation
@@ -396,6 +397,8 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/messenger_test?ssl
 ```
 
 ## REST API
+
+Машиночитаемая спецификация: [backend/api/openapi.yaml](backend/api/openapi.yaml) (OpenAPI 3.1, включая схемы WebSocket-событий). `TestOpenAPICoversRouter` падает, если какой-то маршрут в ней не описан.
 
 Public endpoints:
 

@@ -142,6 +142,7 @@ See the [infrastructure runbook](docs/infrastructure.md) (Russian) for kind depl
 
 ```text
 backend/                     Go module (go.mod, Dockerfile, .env)
+  api/openapi.yaml           OpenAPI 3.1 spec (REST + WebSocket event schemas)
   cmd/app/                   application entrypoint
   cmd/migrate/               migration runner
   internal/config/           environment config loading and validation
@@ -410,6 +411,8 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/messenger_test?ssl
 ```
 
 ## REST API
+
+Machine-readable spec: [backend/api/openapi.yaml](backend/api/openapi.yaml) (OpenAPI 3.1, includes WebSocket event schemas). `TestOpenAPICoversRouter` fails if a route is missing from it.
 
 Public endpoints:
 
