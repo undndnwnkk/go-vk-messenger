@@ -201,7 +201,11 @@ HTTP_PORT=8080
 
 JWT_SECRET=dev-secret-change-me
 JWT_TTL=15m
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
+
+`CORS_ALLOWED_ORIGINS` is a comma-separated allowlist of browser origins (`scheme://host[:port]`, exact match). Allowed origins get `Access-Control-Allow-Origin` and preflight answers (methods `GET, POST, PUT, PATCH, DELETE`, headers `Authorization, Content-Type`); others get no CORS headers. Wildcards and paths are rejected at startup. Credentials mode is off because the API uses the `Authorization` header, not cookies. Empty (the default) disables CORS.
 
 For Docker Compose, the app container overrides `DB_HOST` to `db`, because containers must connect to PostgreSQL by compose service name, not by `localhost`. PostgreSQL 18 data is persisted by mounting the named volume at `/var/lib/postgresql`, which matches the official image data root layout for PostgreSQL 18+.
 

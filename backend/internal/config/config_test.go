@@ -95,3 +95,61 @@ func TestParseJWTTTLRejectsNonPositiveValues(t *testing.T) {
 		}
 	}
 }
+
+func TestParseAllowedOrigins(t *testing.T) {
+	got, err := parseAllowedOrigins(" http://localhost:5173, HTTPS://App.Example.com/ ,,http://localhost:5173,http://127.0.0.1:8080")
+	if err != nil {
+		t.Fatalf("parseAllowedOrigins returned error: %v", err)
+	}
+	want := []string{"http://localhost:5173", "https://app.example.com", "http://127.0.0.1:8080"}
+	if len(got) != len(want) {
+		t.Fatalf("origins = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("origins = %v, want %v", got, want)
+		}
+	}
+
+	if got, err := parseAllowedOrigins(""); err != nil || got != nil {
+		t.Fatalf("empty value: origins=%v err=%v, want nil, nil", got, err)
+	}
+}
+
+func TestParseAllowedOriginsRejectsNonOrigins(t *testing.T) {
+	for _, value := range []string{
+		"*",
+		"localhost:5173",
+		"ftp://example.com",
+		"https://*.example.com",
+		"https://example.com/app",
+		"https://example.com?x=1",
+		"https://user@example.com",
+		"null",
+		"http://ok.example,not-an-origin",
+	} {
+		if _, err := parseAllowedOrigins(value); err == nil {
+			t.Errorf("parseAllowedOrigins(%q) returned nil error", value)
+		}
+	}
+}
+
+func TestLoadReadsCORSAllowedOrigins(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_TTL", "15")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+	chdirTemp(t)
+
+	conf := NewConfig()
+	if err := conf.Load(); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(conf.CORSAllowedOrigins) != 1 || conf.CORSAllowedOrigins[0] != "http://localhost:5173" {
+		t.Fatalf("CORSAllowedOrigins = %v", conf.CORSAllowedOrigins)
+	}
+
+	t.Setenv("CORS_ALLOWED_ORIGINS", "*")
+	if err := NewConfig().Load(); err == nil {
+		t.Fatal("Load accepted wildcard CORS origin")
+	}
+}
