@@ -552,18 +552,48 @@ paths:
       tags: [realtime]
       summary: WebSocket for realtime events
       description: |
-        Upgrade to WebSocket (`ws://` / `wss://`). Authenticated by the same
-        `Authorization: Bearer` header as REST, which browsers cannot set on a
-        WebSocket handshake (see ADR on WebSocket auth once decided).
+        Upgrade to WebSocket (`ws://` / `wss://`).
+
+        Authentication (one of):
+        - Browsers: pass the JWT as a subprotocol together with the application
+          subprotocol: `new WebSocket(url, ["messenger.v1", "bearer." + accessToken])`.
+          The server answers with `Sec-WebSocket-Protocol: messenger.v1` and never
+          echoes the token. Exactly one `bearer.*` entry is allowed.
+        - Other clients: `Authorization: Bearer <JWT>` header, as for REST. When
+          the header is present it wins; an invalid header is not retried with the
+          subprotocol.
+
+        Origin: same-host handshakes are always accepted; cross-origin ones only
+        from `CORS_ALLOWED_ORIGINS`.
 
         Client → server frames: `WsClientEvent`. Server → client frames:
         `WsServerEvent`. There is no offline queue; after reconnect, reload
         history and the chat list to reconcile.
       operationId: openWebSocket
+      security:
+        - bearerAuth: []
+        - bearerSubprotocol: []
+      parameters:
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: false
+          description: 'Browser auth: `messenger.v1, bearer.<JWT>`.'
+          schema: { type: string }
+          example: messenger.v1, bearer.eyJhbGciOiJIUzI1NiIs...
       responses:
-        '101': { description: Switching protocols }
+        '101':
+          description: Switching protocols
+          headers:
+            Sec-WebSocket-Protocol:
+              description: '`messenger.v1` when the client offered it.'
+              schema: { type: string, const: messenger.v1 }
+        '400':
+          description: '`invalid_request`: `bearer.<JWT>` sent without the `messenger.v1` subprotocol'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: Cross-origin handshake rejected by the server's origin check }
+        '403': { description: 'Cross-origin handshake from an origin not in `CORS_ALLOWED_ORIGINS` (plain-text body)' }
 
 components:
   securitySchemes:
@@ -572,6 +602,14 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Access token from `/auth/register` or `/auth/login` (TTL from `JWT_TTL`, default 15m).
+    bearerSubprotocol:
+      type: apiKey
+      in: header
+      name: Sec-WebSocket-Protocol
+      description: |
+        WebSocket handshake only (`/api/v1/ws`): the same JWT sent as a
+        `bearer.<JWT>` subprotocol next to `messenger.v1`, because browsers
+        cannot set the Authorization header on a WebSocket.
 
   parameters:
     ChatID:

@@ -820,11 +820,20 @@ Endpoint:
 GET /api/v1/ws
 ```
 
-JWT обязателен:
+JWT обязателен. Браузер не умеет ставить заголовки на WebSocket, поэтому передаёт токен как subprotocol рядом с прикладным subprotocol `messenger.v1`:
+
+```js
+const ws = new WebSocket("ws://localhost:8080/api/v1/ws", ["messenger.v1", "bearer." + accessToken]);
+// ws.protocol === "messenger.v1"; токен сервер обратно не отправляет
+```
+
+Остальные клиенты (Postman, CLI, тесты) могут по-прежнему использовать заголовок:
 
 ```text
 Authorization: Bearer <JWT>
 ```
+
+Если заголовок есть, используется он; невалидный заголовок отклоняется без fallback на subprotocol. `bearer.<JWT>` без `messenger.v1` возвращает 400. Cross-origin handshake принимается только с origins из `CORS_ALLOWED_ORIGINS` (иначе 403); same-host handshake принимается всегда. См. [ADR 0002](docs/adr/0002-websocket-auth-via-subprotocol.md).
 
 Local URL:
 

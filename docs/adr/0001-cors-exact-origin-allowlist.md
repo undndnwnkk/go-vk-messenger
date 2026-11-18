@@ -26,4 +26,4 @@ The browser frontend runs on a different origin than the API (Vite dev server on
 
 - Every frontend origin (dev, staging, prod) must be listed explicitly per environment.
 - CORS does not cover WebSocket handshakes. `/api/v1/ws` needs its own origin check
-  and a browser-compatible way to pass the token (decided separately).
+  and a browser-compatible way to pass the token, see ADR 0002.

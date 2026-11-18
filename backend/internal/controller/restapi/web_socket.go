@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/coder/websocket"
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
@@ -20,7 +21,11 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// Echo only the application subprotocol, never the bearer.<JWT> entry.
+		Subprotocols:   []string{WebSocketSubprotocol},
+		OriginPatterns: h.wsOriginPatterns,
+	})
 	if err != nil {
 		log.Printf("websocket accept err: %v", err)
 		return
@@ -55,6 +60,22 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	if err := g.Wait(); err != nil && !isExpectedWebSocketClose(err) {
 		log.Printf("read loop or write loop ended with error: %v", err)
 	}
+}
+
+// webSocketOriginPatterns turns exact origins ("https://app.example.com") into
+// websocket.AcceptOptions.OriginPatterns. Patterns containing "://" are matched
+// against scheme://host with path.Match, so its metacharacters are escaped
+// (IPv6 hosts contain "[" and "]").
+func webSocketOriginPatterns(origins []string) []string {
+	if len(origins) == 0 {
+		return nil
+	}
+	escape := strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`)
+	patterns := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		patterns = append(patterns, escape.Replace(origin))
+	}
+	return patterns
 }
 
 func (h *Handler) handleWebSocketSendMessage(ctx context.Context, client *realtime.Client, userID string, event realtime.Event) {

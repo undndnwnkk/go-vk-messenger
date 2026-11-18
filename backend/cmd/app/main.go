@@ -76,7 +76,10 @@ func run() error {
 	chats := service.NewChatService(repository.NewChatRepository(db), *users)
 	messages := service.NewMessageServiceWithLimiter(repository.NewMessageRepository(db), *chats, limiter)
 	metrics := observability.New(hub)
-	handler := restapi.NewHandler(*users, jwt, ready, *chats, *messages, hub, metrics.Middleware, restapi.CORSMiddleware(cfg.CORSAllowedOrigins))
+	handler := restapi.NewHandlerWithOptions(*users, jwt, ready, *chats, *messages, hub, restapi.Options{
+		Middleware:       []func(http.Handler) http.Handler{metrics.Middleware, restapi.CORSMiddleware(cfg.CORSAllowedOrigins)},
+		WebSocketOrigins: cfg.CORSAllowedOrigins,
+	})
 	api := &http.Server{Addr: cfg.HTTPAddr(), Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", metrics.Handler())

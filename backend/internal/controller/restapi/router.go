@@ -19,6 +19,18 @@ type Handler struct {
 	notifier   *MessageNotifier
 	jwtService *service.JWTService
 	health     HealthChecker
+	// wsOriginPatterns are extra origins allowed to open /api/v1/ws, in
+	// websocket.AcceptOptions.OriginPatterns form. Same-host is always allowed.
+	wsOriginPatterns []string
+}
+
+// Options configures NewHandlerWithOptions.
+type Options struct {
+	// Middleware wraps the whole router, in order (e.g. metrics, CORS).
+	Middleware []func(http.Handler) http.Handler
+	// WebSocketOrigins are exact browser origins (scheme://host[:port]) allowed
+	// to open the WebSocket cross-origin; normally CORS_ALLOWED_ORIGINS.
+	WebSocketOrigins []string
 }
 
 type HealthChecker interface {
@@ -26,9 +38,17 @@ type HealthChecker interface {
 }
 
 func NewHandler(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub, middleware ...func(http.Handler) http.Handler) http.Handler {
-	h := &Handler{user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub, notifier: NewMessageNotifier(chat, hub)}
+	return NewHandlerWithOptions(user, jwtService, health, chat, message, hub, Options{Middleware: middleware})
+}
+
+func NewHandlerWithOptions(user service.UserService, jwtService *service.JWTService, health HealthChecker, chat service.ChatService, message service.MessageService, hub *realtime.Hub, opts Options) http.Handler {
+	h := &Handler{
+		user: user, jwtService: jwtService, health: health, chat: chat, message: message, hub: hub,
+		notifier:         NewMessageNotifier(chat, hub),
+		wsOriginPatterns: webSocketOriginPatterns(opts.WebSocketOrigins),
+	}
 	r := chi.NewRouter()
-	r.Use(middleware...)
+	r.Use(opts.Middleware...)
 
 	r.Get("/health", h.healthHandler)
 	r.Get("/ready", h.healthHandler)
@@ -69,7 +89,11 @@ func NewHandler(user service.UserService, jwtService *service.JWTService, health
 				r.Put("/{chatID}/messages/{messageID}/reactions/{reaction}", h.setReactionHandler)
 				r.Delete("/{chatID}/messages/{messageID}/reactions/{reaction}", h.setReactionHandler)
 			})
-
+		})
+		r.Group(func(r chi.Router) {
+			// Browsers cannot set Authorization on a WebSocket handshake, so the
+			// token may also arrive as a "bearer.<JWT>" subprotocol.
+			r.Use(WebSocketJWTMiddleware(h.jwtService))
 			r.Get("/ws", h.webSocketHandler)
 		})
 	})

@@ -872,11 +872,20 @@ Endpoint:
 GET /api/v1/ws
 ```
 
-JWT is required:
+JWT is required. Browsers cannot set headers on a WebSocket, so they pass the token as a subprotocol next to the application subprotocol `messenger.v1`:
+
+```js
+const ws = new WebSocket("ws://localhost:8080/api/v1/ws", ["messenger.v1", "bearer." + accessToken]);
+// ws.protocol === "messenger.v1"; the server never echoes the token
+```
+
+Other clients (Postman, CLI, tests) can keep using the header:
 
 ```text
 Authorization: Bearer <JWT>
 ```
+
+If the header is present it wins, and an invalid header is rejected without falling back to the subprotocol. `bearer.<JWT>` without `messenger.v1` returns 400. Cross-origin handshakes are accepted only from `CORS_ALLOWED_ORIGINS` (403 otherwise); same-host handshakes are always accepted. See [ADR 0002](docs/adr/0002-websocket-auth-via-subprotocol.md).
 
 Local URL:
 
