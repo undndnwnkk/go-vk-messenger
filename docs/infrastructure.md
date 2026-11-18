@@ -19,7 +19,7 @@ Redis здесь без persistence: перезапуск обнуляет вр�
 Из корня репозитория, после создания .env из .env.example:
 
 ```bash
-docker compose --profile monitoring up -d --build
+docker compose --env-file backend/.env --profile monitoring up -d --build
 curl http://localhost:8080/ready
 ```
 
@@ -66,8 +66,8 @@ Readiness исключает нездоровую реплику из Service, l
 
 ```bash
 kind create cluster --name messenger
-docker build --provenance=false --target app -t messenger-app:local .
-docker build --provenance=false --target migrate -t messenger-migrate:local .
+docker build --provenance=false --target app -t messenger-app:local backend
+docker build --provenance=false --target migrate -t messenger-migrate:local backend
 kind load docker-image messenger-app:local messenger-migrate:local --name messenger
 kubectl apply -f deploy/k8s/infra/namespace.yaml
 ```
@@ -162,9 +162,10 @@ kubectl -n messenger rollout status deployment/messenger
 
 При добавлении инфраструктуры проверены: go test/go vet, race detector с настоящими PostgreSQL/Redis, smoke test двух Docker-процессов и двух Pod во временном kind-кластере, успешный migration Job, два healthy scrape target, загрузка 10 панелей Grafana и всех PromQL-запросов, datasource health и три правила алертов. Сценарий недоступного Redis проверяется изолированными тестами (readiness, отказ отправки, сохранение локальной доставки).
 
-Обычные тесты:
+Обычные тесты (из `backend/`):
 
 ```bash
+cd backend
 go test ./...
 go vet ./...
 ```
@@ -182,12 +183,14 @@ kubectl -n messenger port-forward pod/<second-pod> 8082:8080
 Два port-forward работают в отдельных терминалах. Затем Git Bash/Linux/macOS:
 
 ```bash
+cd backend
 TEST_APP_A_URL=http://localhost:8081 TEST_APP_B_URL=http://localhost:8082 go test -race ./tests/infrastructure -v -count=1
 ```
 
 PowerShell (если локально не установлен C compiler, запускай без -race; CI выполняет race test в Linux):
 
 ```powershell
+cd backend
 $env:TEST_APP_A_URL="http://localhost:8081"
 $env:TEST_APP_B_URL="http://localhost:8082"
 go test ./tests/infrastructure -v -count=1
@@ -198,7 +201,7 @@ go test ./tests/infrastructure -v -count=1
 Общий лимит в цифрах: 24 параллельных POST /messages от нового пользователя, нечётные на реплику A, чётные на B. Ожидается ровно **10 × 201 и 14 × 429**: обе реплики видят одно окно в Redis. Без Redis каждая реплика пропустила бы по 10. Посмотреть статус каждого запроса (нужны bash и curl, те же port-forward):
 
 ```bash
-APP_A_URL=http://localhost:8081 APP_B_URL=http://localhost:8082 ./scripts/burst.sh
+APP_A_URL=http://localhost:8081 APP_B_URL=http://localhost:8082 ./backend/scripts/burst.sh
 ```
 
 ```text

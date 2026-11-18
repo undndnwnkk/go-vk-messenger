@@ -129,10 +129,10 @@ Redis Pub/Sub relays events between the local WebSocket hubs of multiple app ins
 - /live checks the process; /ready and /health check PostgreSQL and configured Redis. Metrics use a separate internal listener.
 
 ```bash
-docker compose --profile monitoring up -d --build
+docker compose --env-file backend/.env --profile monitoring up -d --build
 ```
 
-Open Grafana at http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD from .env; demo default messenger-demo), and Prometheus at http://localhost:9091. Monitoring ports bind to localhost. Redis is not published to the host.
+Open Grafana at http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD from backend/.env; demo default messenger-demo), and Prometheus at http://localhost:9091. Monitoring ports bind to localhost. Redis is not published to the host.
 
 Configuration: REDIS_URL (empty locally or redis://redis:6379/0 in Compose), REDIS_PREFIX (messenger), METRICS_ADDR (127.0.0.1:9090 locally; :9090 inside containers). All app replicas need the same database, Redis prefix and JWT secret. Redis failure makes readiness and message sends return 503; REST history remains the recovery mechanism for missed Pub/Sub events.
 
@@ -141,24 +141,30 @@ See the [infrastructure runbook](docs/infrastructure.md) (Russian) for kind depl
 ## Project structure
 
 ```text
-cmd/app/                 application entrypoint
-internal/config/         environment config loading and validation
-internal/controller/     HTTP and WebSocket handlers
-internal/model/          DTOs and domain models
-internal/realtime/       Client, Hub, WebSocket events
-internal/repository/     PostgreSQL repositories
-internal/service/        business logic
-internal/health/         dependency readiness checks
-internal/observability/  Prometheus registry and HTTP middleware
-deploy/                  Kubernetes manifests and monitoring provisioning
-tests/infrastructure/   opt-in smoke test against two running replicas
-migrations/              goose SQL migrations
-.github/workflows/       CI workflow
+backend/                     Go module (go.mod, Dockerfile, .env)
+  cmd/app/                   application entrypoint
+  cmd/migrate/               migration runner
+  internal/config/           environment config loading and validation
+  internal/controller/       HTTP and WebSocket handlers
+  internal/model/            DTOs and domain models
+  internal/realtime/         Client, Hub, WebSocket events
+  internal/repository/       PostgreSQL repositories
+  internal/service/          business logic
+  internal/health/           dependency readiness checks
+  internal/observability/    Prometheus registry and HTTP middleware
+  migrations/                goose SQL migrations
+  tests/infrastructure/      opt-in smoke test against two running replicas
+  scripts/                   rate limit burst script
+deploy/                      Kubernetes manifests and monitoring provisioning
+docker-compose.yml           local stack; builds images from ./backend
+.github/workflows/           CI workflow
 ```
+
+Go commands (`go run`, `go test`, goose) run from `backend/`. `make` targets run from the repository root.
 
 ## Requirements
 
-- Go version from [go.mod](go.mod).
+- Go version from [backend/go.mod](backend/go.mod).
 - Docker and Docker Compose.
 - PostgreSQL for non-Docker local development.
 - GNU Make for convenience targets, or direct Go/Docker commands.
@@ -173,10 +179,10 @@ so a globally installed goose binary is not required.
 
 ## Configuration
 
-Create a local env file:
+Create a local env file for the backend:
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
 Development defaults:
@@ -201,6 +207,8 @@ For Docker Compose, the app container overrides `DB_HOST` to `db`, because conta
 
 Do not commit real production passwords, JWT secrets, access tokens, deployment credentials, local dumps, logs, or `.env` files. `.env` is ignored by Git.
 
+Docker Compose passes `backend/.env` to the containers. For `${VAR}` substitution inside `docker-compose.yml` (DB credentials, ports, Grafana password) pass `--env-file backend/.env`; root `make docker-*` targets do this automatically.
+
 Startup validation:
 
 - missing `JWT_SECRET` fails startup with a clear error;
@@ -212,8 +220,8 @@ Startup validation:
 ```bash
 git clone <repository-url>
 cd go-vk-messenger
-cp .env.example .env
-docker compose up -d --build
+cp backend/.env.example backend/.env
+docker compose --env-file backend/.env up -d --build
 curl http://localhost:8080/health
 ```
 
@@ -243,7 +251,7 @@ docker compose run --rm migrate
 
 ## Run without Docker
 
-Start PostgreSQL yourself and configure `.env` with the correct connection values.
+Start PostgreSQL yourself and configure `backend/.env` with the correct connection values. Run `make` from the repository root:
 
 ```bash
 make migrate-up
@@ -253,6 +261,7 @@ make run
 Equivalent direct commands:
 
 ```bash
+cd backend
 go run github.com/pressly/goose/v3/cmd/goose@latest -dir ./migrations postgres "user=postgres password=postgres host=127.0.0.1 port=5432 dbname=messenger_db sslmode=disable" up
 go run ./cmd/app
 ```
@@ -265,7 +274,7 @@ http://localhost:8080
 
 ## Migrations
 
-Migrations live in [migrations](migrations). Expected order:
+Migrations live in [backend/migrations](backend/migrations). Expected order:
 
 ```text
 users
@@ -341,7 +350,7 @@ The Makefile is written for GNU Make on Linux/macOS. Docker startup does not dep
 
 GitHub Actions workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
-It runs on pull requests to `main` and pushes to `main`.
+It runs on pull requests to `main` and pushes to `main` that touch `backend/` or the workflow itself. All steps run with `backend/` as the working directory.
 
 Checks:
 
@@ -357,18 +366,19 @@ Current coverage: **74.4%** of statements (`go test -coverprofile ./...`, includ
 
 ```bash
 make cover                       # per-package and total coverage
-go tool cover -html=cover.out    # line-by-line report in the browser
+go tool cover -html=backend/cover.out    # line-by-line report in the browser
 ```
 
 Integration packages need `TEST_DATABASE_URL` and `TEST_REDIS_URL`; without them those tests are skipped and the number is lower.
 
-Shared rate limit check: 24 concurrent sends from one user, split between two replicas, give exactly **10 × HTTP 201 and 14 × HTTP 429** (limit 10 messages per 5 seconds, kept in Redis). `tests/infrastructure` asserts this in CI; `scripts/burst.sh` prints the status of every request — see the [infrastructure runbook](docs/infrastructure.md#проверка).
+Shared rate limit check: 24 concurrent sends from one user, split between two replicas, give exactly **10 × HTTP 201 and 14 × HTTP 429** (limit 10 messages per 5 seconds, kept in Redis). `backend/tests/infrastructure` asserts this in CI; `backend/scripts/burst.sh` prints the status of every request — see the [infrastructure runbook](docs/infrastructure.md#проверка).
 
 ## Quality gate
 
-Before release:
+Before release (from `backend/`):
 
 ```bash
+cd backend
 go test ./...
 go vet ./...
 go test -race ./...
@@ -382,7 +392,7 @@ cgo: C compiler "gcc" not found
 
 install a C compiler or rely on the Linux CI race job.
 
-Repository integration tests:
+Repository integration tests (from `backend/`):
 
 ```bash
 set TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/messenger_test?sslmode=disable
