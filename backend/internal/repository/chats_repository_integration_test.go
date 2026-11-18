@@ -137,7 +137,6 @@ func TestChatRepositoryPostgres(t *testing.T) {
 		}
 	})
 	t.Run("GetOrCreateDirectConcurrent", func(t *testing.T) {
-		// Hold a table lock so all callers miss the fast path before any insert can commit.
 		blocker, err := pool.Begin(ctx)
 		if err != nil {
 			t.Fatal(err)

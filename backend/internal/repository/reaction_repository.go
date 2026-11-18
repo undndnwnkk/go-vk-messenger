@@ -9,7 +9,6 @@ import (
 	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 )
 
-// Locking the message serializes reactions with other reactions and message deletion.
 func (r *MessageRepository) SetReaction(ctx context.Context, chatID, userID string, messageID int64, reaction string, add bool) (*model.MessageReactions, bool, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {

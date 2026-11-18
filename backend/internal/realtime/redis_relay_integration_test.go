@@ -69,7 +69,6 @@ func TestRedisRelayAcrossInstances(t *testing.T) {
 		default:
 		}
 	}
-	// Redis failure does not prevent local delivery or panic on shutdown.
 	_ = client.Close()
 	h1.SendToUser("alice", private)
 	read(alice1, string(private))

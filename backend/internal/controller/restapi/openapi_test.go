@@ -15,8 +15,6 @@ import (
 	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
-// TestOpenAPICoversRouter keeps backend/api/openapi.yaml in sync with the router:
-// every registered route must be documented and every documented route must exist.
 func TestOpenAPICoversRouter(t *testing.T) {
 	handler := NewHandler(service.UserService{}, nil, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}, realtime.NewHub())
 	routes, ok := handler.(chi.Routes)
@@ -26,8 +24,6 @@ func TestOpenAPICoversRouter(t *testing.T) {
 
 	fromRouter := map[string]bool{}
 	err := chi.Walk(routes, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-		// chi registers "/chats" and "/chats/" (and "/members/") as separate routes;
-		// the spec documents the canonical form without the trailing slash.
 		if len(route) > 1 {
 			route = strings.TrimSuffix(route, "/")
 		}
@@ -60,8 +56,6 @@ var (
 	specMethodLine = regexp.MustCompile(`^    (get|put|post|delete|patch|head|options):\s*$`)
 )
 
-// readOpenAPIOperations returns "METHOD /path" for every operation under `paths:`.
-// It relies on the file's two-space indentation instead of a YAML dependency.
 func readOpenAPIOperations(t *testing.T, path string) map[string]bool {
 	t.Helper()
 	f, err := os.Open(path)

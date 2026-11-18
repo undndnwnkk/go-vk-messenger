@@ -22,7 +22,6 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Echo only the application subprotocol, never the bearer.<JWT> entry.
 		Subprotocols:   []string{WebSocketSubprotocol},
 		OriginPatterns: h.wsOriginPatterns,
 	})
@@ -62,10 +61,6 @@ func (h *Handler) webSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// webSocketOriginPatterns turns exact origins ("https://app.example.com") into
-// websocket.AcceptOptions.OriginPatterns. Patterns containing "://" are matched
-// against scheme://host with path.Match, so its metacharacters are escaped
-// (IPv6 hosts contain "[" and "]").
 func webSocketOriginPatterns(origins []string) []string {
 	if len(origins) == 0 {
 		return nil

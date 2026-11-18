@@ -19,8 +19,6 @@ import (
 	"github.com/undndnwnkk/go-vk-messenger/internal/realtime"
 )
 
-// This opt-in smoke test creates disposable users/chats in a running deployment.
-// Both URLs must address DIFFERENT replicas sharing one PostgreSQL and Redis.
 func TestReplicas(t *testing.T) {
 	a, b := os.Getenv("TEST_APP_A_URL"), os.Getenv("TEST_APP_B_URL")
 	if a == "" || b == "" {
@@ -110,7 +108,6 @@ func TestReplicas(t *testing.T) {
 	aliceConn, aliceEvents := connect(a, alice)
 	bobConn, bobEvents := connect(b, bob)
 	aliceOtherConn, aliceOtherDevice := connect(b, alice)
-	// Ping confirms local registration before sending through another replica.
 	for _, device := range []struct {
 		conn   *websocket.Conn
 		events <-chan realtime.Event
@@ -155,7 +152,6 @@ func TestReplicas(t *testing.T) {
 		expect(events, realtime.EventMessageDeleted)
 	}
 
-	// A fresh user has an empty window. Split a concurrent burst across replicas.
 	limited, _ := register(a)
 	request(a, "POST", "/api/v1/chats/direct", limited, map[string]string{"user2_id": bobID}, 200, &chat)
 	statuses := make(chan int, 24)

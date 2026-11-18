@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Sends 24 concurrent messages from one fresh user, alternating between two
-# replicas, and prints each HTTP status. With a shared Redis limiter
-# (10 messages per 5 s per user) the expected result is 10 x 201 and 14 x 429.
-#
-# Usage: APP_A_URL=http://localhost:8081 APP_B_URL=http://localhost:8082 ./scripts/burst.sh
-# Creates users, a chat and messages: run it against a test database.
 set -euo pipefail
 
 A=${APP_A_URL:-http://localhost:8081}

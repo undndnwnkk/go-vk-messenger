@@ -118,7 +118,6 @@ func TestChatMutePrivateRealtimeAndMessageDelivery(t *testing.T) {
 	}
 	readMute(alice1, true, 1)
 	readMute(alice2, true, 1)
-	// Duplicate mute must not enqueue another settings event.
 	rec = messageHTTPRequest(h, token, "PATCH", mutePath, `{"muted":true}`)
 	if rec.Code != 200 || chat.muteVersion != 1 {
 		t.Fatalf("repeat mute=%s", rec.Body)

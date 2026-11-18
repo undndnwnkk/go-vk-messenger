@@ -131,7 +131,6 @@ func TestCORSEmptyAllowlistIsNoop(t *testing.T) {
 }
 
 func TestCORSThroughRouterPreflightOnUnknownMethod(t *testing.T) {
-	// chi would answer OPTIONS with 405; the middleware must run before routing.
 	router := NewHandler(service.UserService{}, nil, fakeHealthChecker{}, service.ChatService{}, service.MessageService{}, realtime.NewHub(),
 		CORSMiddleware([]string{"http://localhost:5173"}))
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/chats", nil)

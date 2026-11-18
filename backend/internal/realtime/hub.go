@@ -50,8 +50,6 @@ func (h *Hub) SendToUser(userID string, data []byte) {
 	h.SendToUsers([]string{userID}, data)
 }
 
-// SetPublisher is used by the optional Redis relay; local clients still receive
-// events if publication fails. The relay delivers remote events only locally.
 func (h *Hub) SetPublisher(publish func([]string, []byte) error) {
 	h.mux.Lock()
 	defer h.mux.Unlock()

@@ -239,7 +239,6 @@ func (s *ChatService) RemoveMember(ctx context.Context, currentUserID, chatID, u
 	return chatRepoError(s.repo.RemoveMember(ctx, chatID, userID))
 }
 
-// Accept the canonical UUID shape (case insensitive) and normalize before comparisons.
 func normalizeChatIDs(ids ...*string) error {
 	for _, id := range ids {
 		value := *id

@@ -35,7 +35,6 @@ func TestReplySendAndBroadcast(t *testing.T) {
 			waitForConnectionCount(t, ctx, hub, httpMessageUser, 1)
 			waitForConnectionCount(t, ctx, hub, wsMessageBob, 1)
 			waitForConnectionCount(t, ctx, hub, wsMessageCarol, 1)
-			// The parent preview and sender must come from the server, not the payload.
 			body := `{"content":"answer","reply_to_message_id":42,"reply_to":{"content":"forged"},"sender_id":"` + wsMessageCarol + `","chat_id":"` + httpMessageChat + `"}`
 			var result model.Message
 			if transport == "REST" {

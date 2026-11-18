@@ -52,7 +52,6 @@ func testMessageRepliesPostgres(t *testing.T, ctx context.Context, pool *pgxpool
 	if reply.ReplyTo.SenderID != userID {
 		t.Fatalf("parent author=%s", reply.ReplyTo.SenderID)
 	}
-	// The parent is outside this page, but the reply preview is still available.
 	page, err := repo.ListBefore(ctx, chat.ID, nil, 1)
 	if err != nil || len(page) != 1 {
 		t.Fatalf("page=%+v err=%v", page, err)
@@ -106,7 +105,6 @@ func testMessageRepliesPostgres(t *testing.T, ctx context.Context, pool *pgxpool
 			}
 		})
 	}
-	// Even SQL callers cannot bypass the chat boundary or create dangling references.
 	for _, target := range []int64{reply.ID, missing} {
 		_, err := pool.Exec(ctx, "INSERT INTO messages(chat_id,sender_id,content,reply_to_message_id) VALUES($1,$2,'invalid',$3)", other.ID, userID, target)
 		var pgErr *pgconn.PgError
@@ -142,7 +140,6 @@ func testMessageRepliesPostgres(t *testing.T, ctx context.Context, pool *pgxpool
 			t.Fatalf("upgraded message=%+v err=%v", msg, err)
 		}
 	})
-	// A self-referencing FK must not prevent the chat's existing cascade deletion.
 	if _, err := pool.Exec(ctx, "DELETE FROM chats WHERE id = $1", chat.ID); err != nil {
 		t.Fatalf("delete chat with replies: %v", err)
 	}

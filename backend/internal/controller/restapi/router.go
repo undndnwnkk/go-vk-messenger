@@ -12,24 +12,18 @@ import (
 )
 
 type Handler struct {
-	user       service.UserService
-	chat       service.ChatService
-	message    service.MessageService
-	hub        *realtime.Hub
-	notifier   *MessageNotifier
-	jwtService *service.JWTService
-	health     HealthChecker
-	// wsOriginPatterns are extra origins allowed to open /api/v1/ws, in
-	// websocket.AcceptOptions.OriginPatterns form. Same-host is always allowed.
+	user             service.UserService
+	chat             service.ChatService
+	message          service.MessageService
+	hub              *realtime.Hub
+	notifier         *MessageNotifier
+	jwtService       *service.JWTService
+	health           HealthChecker
 	wsOriginPatterns []string
 }
 
-// Options configures NewHandlerWithOptions.
 type Options struct {
-	// Middleware wraps the whole router, in order (e.g. metrics, CORS).
-	Middleware []func(http.Handler) http.Handler
-	// WebSocketOrigins are exact browser origins (scheme://host[:port]) allowed
-	// to open the WebSocket cross-origin; normally CORS_ALLOWED_ORIGINS.
+	Middleware       []func(http.Handler) http.Handler
 	WebSocketOrigins []string
 }
 
@@ -91,8 +85,6 @@ func NewHandlerWithOptions(user service.UserService, jwtService *service.JWTServ
 			})
 		})
 		r.Group(func(r chi.Router) {
-			// Browsers cannot set Authorization on a WebSocket handshake, so the
-			// token may also arrive as a "bearer.<JWT>" subprotocol.
 			r.Use(WebSocketJWTMiddleware(h.jwtService))
 			r.Get("/ws", h.webSocketHandler)
 		})

@@ -24,8 +24,6 @@ func (l *RedisRateLimiter) Check(ctx context.Context, userID string) (bool, erro
 	return allowed == 1, err
 }
 
-// Use Redis time, a unique member and a single atomic script across all replicas.
-// Rejected attempts neither consume an extra slot nor extend the window.
 var slidingWindowScript = redis.NewScript(`
 local t = redis.call('TIME')
 local now = t[1] * 1000 + math.floor(t[2] / 1000)

@@ -10,7 +10,6 @@ ALTER TABLE messages ADD CONSTRAINT messages_content_check CHECK (
 );
 
 -- +goose Down
--- Keep message IDs and read cursors intact; deleted text cannot be restored.
 UPDATE messages SET content = '[deleted]', deleted_at = NULL WHERE deleted_at IS NOT NULL;
 ALTER TABLE messages DROP CONSTRAINT messages_content_check;
 ALTER TABLE messages ADD CONSTRAINT messages_content_check CHECK (char_length(content) BETWEEN 1 AND 4000);

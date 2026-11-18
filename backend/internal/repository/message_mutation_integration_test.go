@@ -126,7 +126,6 @@ func testMessageMutationsPostgres(t *testing.T, ctx context.Context, pool *pgxpo
 	if _, err := repo.Delete(ctx, chat.ID, users[0], first.ID); !errors.Is(err, ErrMessageNotFound) {
 		t.Fatalf("repeat delete: %v", err)
 	}
-	// Deleted IDs still support read advancement after reconnect.
 	if _, advanced, err := chats.MarkRead(ctx, chat.ID, users[1], second.ID); err != nil || !advanced {
 		t.Fatalf("read tombstone: advanced=%v err=%v", advanced, err)
 	}

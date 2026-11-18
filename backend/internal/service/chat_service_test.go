@@ -261,7 +261,6 @@ func TestCannotRemoveSelf(t *testing.T) {
 }
 
 func TestInvalidChatIDsStopBeforeRepository(t *testing.T) {
-	// The embedded nil repository panics if validation lets any call through.
 	svc := NewChatService(struct{ ChatRepositoryInterface }{}, UserService{})
 	ctx := context.Background()
 	const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

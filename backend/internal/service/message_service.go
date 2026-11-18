@@ -93,7 +93,6 @@ func (s *MessageService) History(ctx context.Context, userID, chatID string, bef
 	if limit <= 0 {
 		return nil, ErrInvalidLimit
 	}
-	// Cap oversized pages; omitted limits are defaulted to 50 by HTTP.
 	if limit > 100 {
 		limit = 100
 	}

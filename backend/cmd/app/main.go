@@ -105,7 +105,6 @@ func run() error {
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	// Shutdown does not close hijacked WebSockets; close them explicitly first.
 	hub.Shutdown()
 	if err := api.Shutdown(shutdown); err != nil {
 		_ = api.Close()

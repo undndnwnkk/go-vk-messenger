@@ -75,7 +75,6 @@ func (r *MessageRepository) Delete(ctx context.Context, chatID, senderID string,
 		return nil, fmt.Errorf("begin delete message: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	// Retain the row so existing read cursors and history pagination remain valid.
 	msg, err := scanMessage(tx.QueryRow(ctx, `
 		UPDATE messages SET content = '', deleted_at = clock_timestamp(), reactions_version = reactions_version + 1
 		WHERE chat_id = $1 AND sender_id = $2 AND id = $3 AND deleted_at IS NULL
@@ -157,8 +156,6 @@ func (r *MessageRepository) Search(
 	return messages, nil
 }
 
-// Fetch the current parent in the same query/snapshot, including for RETURNING.
-// No recursive reply expansion and no additional query per message.
 const messageColumns = `id, chat_id, sender_id, content, created_at, edited_at, deleted_at, reply_to_message_id,
 	(SELECT jsonb_build_object(
 		'id', parent.id, 'sender_id', parent.sender_id, 'content', parent.content,

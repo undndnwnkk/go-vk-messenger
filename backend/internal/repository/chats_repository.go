@@ -88,7 +88,6 @@ func (r *ChatRepository) GetOrCreateDirect(
 	if _, err := tx.Exec(ctx, insertDirectChatQuery, chat.ID, userID1, userID2); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "direct_chats_user1_id_user2_id_key" {
-			// Release the failed transaction (including its speculative chat) before reading the winner.
 			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
 				return nil, fmt.Errorf("rollback direct chat: %w", rollbackErr)
 			}
@@ -295,12 +294,10 @@ func normalizeUserPair(a, b string) (string, string) {
 }
 
 var (
-	// errors
-	ErrMemberNotFound      = errors.New("member not found")
-	ErrMemberAlreadyExists = errors.New("member already exists")
-	ErrChatNotFound        = errors.New("chat not found")
-	ErrMessageNotFound     = errors.New("message not found")
-	// queries
+	ErrMemberNotFound              = errors.New("member not found")
+	ErrMemberAlreadyExists         = errors.New("member already exists")
+	ErrChatNotFound                = errors.New("chat not found")
+	ErrMessageNotFound             = errors.New("message not found")
 	insertMemberQuery              = "INSERT INTO chat_members(chat_id, user_id, role) VALUES ($1, $2, $3)"
 	insertMemberAtCurrentReadQuery = `
  INSERT INTO chat_members(chat_id, user_id, role, last_read_message_id)

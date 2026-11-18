@@ -67,7 +67,6 @@ func TestHubConcurrentAccess(t *testing.T) {
 				<-remove
 				hub.Unregister(client)
 				hub.ConnectionCount(user)
-				// Exercise mixed reads and writes while other clients disconnect.
 				for j := 0; j < 50; j++ {
 					hub.Register(client)
 					hub.ConnectionCount(user)

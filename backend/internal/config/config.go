@@ -13,14 +13,12 @@ import (
 )
 
 type Config struct {
-	HTTPConfig     HTTPConfig
-	PostgresConfig PostgresConfig
-	JWTConfig      JWTConfig
-	RedisURL       string
-	RedisPrefix    string
-	MetricsAddr    string
-	// CORSAllowedOrigins lists exact browser origins allowed to call the API.
-	// Empty disables CORS headers entirely.
+	HTTPConfig         HTTPConfig
+	PostgresConfig     PostgresConfig
+	JWTConfig          JWTConfig
+	RedisURL           string
+	RedisPrefix        string
+	MetricsAddr        string
 	CORSAllowedOrigins []string
 }
 
@@ -92,9 +90,6 @@ func (c *Config) Load() error {
 	return nil
 }
 
-// parseAllowedOrigins parses a comma-separated list of origins such as
-// "http://localhost:5173,https://app.example.com". Every entry must be a bare
-// http(s) origin; wildcards are rejected so the allowlist stays explicit.
 func parseAllowedOrigins(value string) ([]string, error) {
 	var origins []string
 	seen := make(map[string]bool)

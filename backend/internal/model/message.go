@@ -20,7 +20,6 @@ type Message struct {
 	Reactions        []ReactionSummary `json:"reactions"`
 }
 
-// MessageReply is a live, one-level preview, not a stored copy of the original text.
 type MessageReply struct {
 	ID        int64      `json:"id"`
 	SenderID  string     `json:"sender_id"`

@@ -72,7 +72,6 @@ func TestRedisRateLimitSharedAcrossInstances(t *testing.T) {
 	if err != nil || ttl <= 0 || ttl > MessageRateLimitWindow {
 		t.Fatalf("ttl=%v err=%v", ttl, err)
 	}
-	// Expiration frees the user's limit without any app restart.
 	if err := c1.PExpire(ctx, prefix+":rate:alice", time.Millisecond).Err(); err != nil {
 		t.Fatal(err)
 	}

@@ -77,7 +77,6 @@ func testMessageReactionsPostgres(t *testing.T, ctx context.Context, pool *pgxpo
 			}
 		}
 	}
-	// Repeated concurrent PUTs result in exactly one new reaction and version increment.
 	var changedCount atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
@@ -98,7 +97,6 @@ func testMessageReactionsPostgres(t *testing.T, ctx context.Context, pool *pgxpo
 		t.Fatalf("concurrent changes=%d", changedCount.Load())
 	}
 
-	// The message lock also protects against adding reactions after concurrent deletion.
 	var deleteErr, reactionErr error
 	var deleted *model.Message
 	wg.Add(2)

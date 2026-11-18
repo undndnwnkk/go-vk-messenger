@@ -123,11 +123,9 @@ func TestWebSocketAuthRejections(t *testing.T) {
 }
 
 func TestWebSocketSubprotocolsAcrossHeaders(t *testing.T) {
-	// Proxies may split the list into several header lines.
 	handler, token := newWebSocketAuthHandler(t, nil)
 	conn, _, err := dialWebSocketAuth(t, handler, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Sec-WebSocket-Protocol": {"bearer." + token}},
-		// DialOptions.Subprotocols adds a second header line.
+		HTTPHeader:   http.Header{"Sec-WebSocket-Protocol": {"bearer." + token}},
 		Subprotocols: []string{WebSocketSubprotocol},
 	})
 	if err != nil {

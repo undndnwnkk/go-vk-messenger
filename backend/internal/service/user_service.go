@@ -41,13 +41,11 @@ func (s *UserService) Register(ctx context.Context, req model.CreateUserRequest)
 		return "", ErrLongPassword
 	}
 
-	// password hashing
 	pswdHash, err := hashPassword(req.Password)
 	if err != nil {
 		return "", fmt.Errorf("error while hashing: %w", err)
 	}
 
-	// creating user and sending to db
 	user := model.User{Username: username, PasswordHash: pswdHash}
 	id, err := s.repo.Create(ctx, user)
 	if err != nil {
