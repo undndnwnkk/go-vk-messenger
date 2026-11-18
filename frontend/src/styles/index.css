@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "../../../docs/design/handoff/tokens.css";
+
+@custom-variant dark (&:where(.pl-dark, .pl-dark *));
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-bg-app: var(--bg-app);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sunken: var(--sunken);
+  --color-chat-bg: var(--chat-bg);
+  --color-overlay: var(--overlay);
+  --color-skeleton: var(--skeleton);
+  --color-row-hover: var(--row-hover);
+  --color-row-active: var(--row-active);
+  --color-border: var(--border);
+  --color-border-input: var(--border-input);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent-soft: var(--on-accent-soft);
+  --color-focus-ring: var(--focus-ring);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-in-border: var(--bubble-in-border);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-out-text: var(--bubble-out-text);
+  --color-bubble-out-meta: var(--bubble-out-meta);
+  --color-quote-in: var(--quote-in);
+  --color-quote-out: var(--quote-out);
+  --color-badge-bg: var(--badge-bg);
+  --color-badge-fg: var(--badge-fg);
+  --color-badge-muted-bg: var(--badge-muted-bg);
+  --color-badge-muted-fg: var(--badge-muted-fg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-text: var(--warn-text);
+  --color-warn-border: var(--warn-border);
+  --color-hl: var(--hl);
+  --color-on-hl: var(--on-hl);
+  --color-hl-current: var(--hl-current);
+  --color-on-hl-current: var(--on-hl-current);
+  --color-av1-bg: var(--av1-bg);
+  --color-av1-fg: var(--av1-fg);
+  --color-av2-bg: var(--av2-bg);
+  --color-av2-fg: var(--av2-fg);
+  --color-av3-bg: var(--av3-bg);
+  --color-av3-fg: var(--av3-fg);
+  --color-av4-bg: var(--av4-bg);
+  --color-av4-fg: var(--av4-fg);
+  --color-av5-bg: var(--av5-bg);
+  --color-av5-fg: var(--av5-fg);
+  --color-av6-bg: var(--av6-bg);
+  --color-av6-fg: var(--av6-fg);
+
+  --font-*: initial;
+  --font-sans: var(--font-ui);
+  --font-heading: var(--font-display);
+  --font-code: var(--font-mono);
+
+  --text-*: initial;
+  --text-xs: var(--fs-xs);
+  --text-xs--line-height: var(--lh-xs);
+  --text-sm: var(--fs-sm);
+  --text-sm--line-height: var(--lh-sm);
+  --text-base: var(--fs-base);
+  --text-base--line-height: var(--lh-base);
+  --text-md: var(--fs-md);
+  --text-md--line-height: var(--lh-md);
+  --text-lg: var(--fs-lg);
+  --text-lg--line-height: var(--lh-lg);
+  --text-xl: var(--fs-xl);
+  --text-xl--line-height: var(--lh-xl);
+  --text-2xl: var(--fs-2xl);
+  --text-2xl--line-height: var(--lh-2xl);
+  --text-3xl: var(--fs-3xl);
+  --text-3xl--line-height: var(--lh-3xl);
+
+  --font-weight-*: initial;
+  --font-weight-regular: var(--fw-regular);
+  --font-weight-medium: var(--fw-medium);
+  --font-weight-semibold: var(--fw-semibold);
+
+  --spacing: 4px;
+  --spacing-touch: var(--touch);
+  --spacing-header: var(--header-h);
+  --spacing-header-mobile: var(--header-h-mobile);
+  --spacing-row: var(--row-h);
+  --spacing-list: var(--list-w);
+  --spacing-panel: var(--panel-w);
+  --spacing-content: var(--content-max);
+  --spacing-avatar-xs: var(--avatar-xs);
+  --spacing-avatar-sm: var(--avatar-sm);
+  --spacing-avatar-md: var(--avatar-md);
+  --spacing-avatar-lg: var(--avatar-lg);
+  --spacing-avatar-xl: var(--avatar-xl);
+  --spacing-icon: var(--icon);
+
+  --radius-*: initial;
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-pill: var(--r-pill);
+  --radius-full: 50%;
+
+  --shadow-*: initial;
+  --shadow-1: var(--shadow-1);
+  --shadow-pop: var(--shadow-pop);
+
+  --breakpoint-*: initial;
+  --breakpoint-desk: 760px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-app);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-base);
+    line-height: var(--lh-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  input::placeholder {
+    color: var(--text-3);
+    opacity: 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  input:focus-visible {
+    outline: none;
+  }
+}
+
+@utility field-focus {
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+}
