@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { Outlet, useMatch } from "react-router";
 
-import { Icon } from "../../components/Icon";
+import { IconButton } from "../../components/IconButton";
 import { Logo } from "../../components/Logo";
+import { SearchField } from "../../components/SearchField";
 import { AccountFooter } from "./AccountFooter";
 import { ChatList } from "./ChatList";
+import { NewChatDialog, type NewChatMode } from "./new/NewChatDialog";
 
 export function ChatsLayout() {
   const chatOpen = useMatch("/chats/:id") !== null;
   const [filter, setFilter] = useState("");
+  const [newChatMode, setNewChatMode] = useState<NewChatMode | null>(null);
   return (
     <div className="flex h-full overflow-hidden bg-bg-app">
       <aside
@@ -16,23 +19,26 @@ export function ChatsLayout() {
       >
         <header className="flex h-header-mobile flex-none items-center gap-2 pr-3 pl-5 desk:h-header">
           <Logo size="md" />
+          <span className="flex-1" />
+          <IconButton
+            label="New chat"
+            icon="compose"
+            onClick={() => {
+              setNewChatMode("direct");
+            }}
+          />
         </header>
         <div className="flex-none px-4 pb-2">
-          <div className="flex h-touch items-center gap-2 rounded-md border field-focus border-transparent bg-sunken px-3 text-text-3">
-            <Icon name="search" size={18} />
-            <input
-              type="search"
-              aria-label="Search chats"
-              placeholder="Search chats"
-              value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value);
-              }}
-              className="h-10 min-w-0 flex-1 border-0 bg-transparent text-md text-text outline-none"
-            />
-          </div>
+          <SearchField
+            label="Search chats"
+            placeholder="Search chats"
+            value={filter}
+            onChange={(event) => {
+              setFilter(event.target.value);
+            }}
+          />
         </div>
-        <ChatList filter={filter} />
+        <ChatList filter={filter} onNewChat={setNewChatMode} />
         <AccountFooter />
       </aside>
       <main
@@ -40,6 +46,12 @@ export function ChatsLayout() {
       >
         <Outlet />
       </main>
+      <NewChatDialog
+        mode={newChatMode}
+        onClose={() => {
+          setNewChatMode(null);
+        }}
+      />
     </div>
   );
 }

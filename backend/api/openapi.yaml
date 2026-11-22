@@ -28,6 +28,7 @@ servers:
 tags:
   - name: health
   - name: auth
+  - name: users
   - name: chats
   - name: members
   - name: messages
@@ -133,11 +134,50 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/users/search:
+    get:
+      tags: [users]
+      summary: Find users to start a chat with
+      description: |
+        With `q`, returns users whose username starts with `q` (trimmed, a leading
+        `@` dropped, lower-cased). Without `q` (or blank), returns the current
+        user's contacts: users who share at least one chat with them. The current
+        user is never included. Ordered by username.
+      operationId: searchUsers
+      parameters:
+        - name: q
+          in: query
+          description: Username prefix. `%` and `_` match literally.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Page size. Values above 50 are capped at 50.
+          schema: { type: integer, minimum: 1, default: 20 }
+      responses:
+        '200':
+          description: Matching users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserSummary' }
+        '400':
+          description: '`invalid_limit`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /api/v1/chats:
     get:
       tags: [chats]
       summary: List the current user's chats
-      description: Includes per-user unread counter, read position and mute state.
+      description: |
+        Includes per-user unread counter, read position and mute state, the other
+        user of a direct chat (`peer`) and the latest message (`last_message`,
+        deleted messages included). Ordered by last activity: the latest message
+        time, or the chat creation time when there are no messages, newest first.
       operationId: listChats
       responses:
         '200':
@@ -775,6 +815,35 @@ components:
           type: integer
           format: int64
           description: Increases on every mute change; ignore older `chat_mute_updated` events.
+        peer:
+          $ref: '#/components/schemas/UserSummary'
+          description: |
+            The other user of a direct chat. Returned by `GET /chats` and
+            `GET /chats/{chatID}`; absent for group chats and in create responses.
+        last_message:
+          $ref: '#/components/schemas/ChatLastMessage'
+          description: |
+            Latest message of the chat, deleted ones included. Returned by
+            `GET /chats` and `GET /chats/{chatID}`; absent when the chat has no
+            messages and in create responses.
+    UserSummary:
+      type: object
+      required: [id, username]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+    ChatLastMessage:
+      type: object
+      required: [id, sender_id, sender_username, content, deleted, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        sender_id: { type: string, format: uuid }
+        sender_username: { type: string }
+        content:
+          type: string
+          description: Empty string when `deleted` is true.
+        deleted: { type: boolean }
+        created_at: { type: string, format: date-time }
     ChatMember:
       type: object
       required: [chat_id, user_id, role, joined_at]

@@ -1,14 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Link, useParams } from "react-router";
 
 import { isApiError } from "../../api/errors";
+import { useMarkChatRead } from "../../api/mutations";
 import { chatQuery, messagesQuery } from "../../api/queries";
 import { useAuth } from "../../auth/useAuth";
 import { Avatar } from "../../components/Avatar";
 import { ErrorState } from "../../components/ErrorState";
 import { Icon } from "../../components/Icon";
 import { StatePanel } from "../../components/StatePanel";
-import { chatSubtitle, chatTitle } from "../../lib/chat";
+import { chatAvatarSeed, chatSubtitle, chatTitle } from "../../lib/chat";
 import { MessageList } from "./MessageList";
 
 function isMissingChat(error: unknown): boolean {
@@ -33,6 +35,14 @@ export function ChatPage() {
   const { user } = useAuth();
   const chat = useQuery(chatQuery(id));
   const messages = useQuery(messagesQuery(id));
+  const { mutate: markRead } = useMarkChatRead();
+  const newestMessageId = messages.data?.messages[0]?.id;
+
+  useEffect(() => {
+    if (newestMessageId !== undefined) {
+      markRead({ chatId: id, messageId: newestMessageId });
+    }
+  }, [id, newestMessageId, markRead]);
 
   if (chat.isError) {
     if (isMissingChat(chat.error)) {
@@ -95,7 +105,7 @@ export function ChatPage() {
         </Link>
         {chat.data ? (
           <Avatar
-            seed={chat.data.id}
+            seed={chatAvatarSeed(chat.data)}
             name={title}
             size="md"
             shape={chat.data.type === "group" ? "square" : "round"}

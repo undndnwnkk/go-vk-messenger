@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -137,12 +139,15 @@ func (r *ChatRepository) GetByIDForUser(
 ) (*model.Chat, error) {
 	var chat model.Chat
 
-	if err := r.db.QueryRow(ctx, getByIDForUserQuery, chatID, userID).Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.Muted, &chat.MuteVersion); err != nil {
+	var summary chatSummaryColumns
+	dest := append([]any{&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.Muted, &chat.MuteVersion}, summary.targets()...)
+	if err := r.db.QueryRow(ctx, getByIDForUserQuery, chatID, userID).Scan(dest...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrChatNotFound
 		}
 		return nil, fmt.Errorf("chat repository: %w", err)
 	}
+	summary.apply(&chat)
 
 	return &chat, nil
 }
@@ -160,9 +165,12 @@ func (r *ChatRepository) ListByUser(
 	defer rows.Close()
 	for rows.Next() {
 		var chat model.Chat
-		if err := rows.Scan(&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.LastReadMessageID, &chat.UnreadCount, &chat.Muted, &chat.MuteVersion); err != nil {
+		var summary chatSummaryColumns
+		dest := append([]any{&chat.ID, &chat.Type, &chat.Title, &chat.CreatedBy, &chat.CreatedAt, &chat.LastReadMessageID, &chat.UnreadCount, &chat.Muted, &chat.MuteVersion}, summary.targets()...)
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("chat repository: %w", err)
 		}
+		summary.apply(&chat)
 
 		chats = append(chats, chat)
 	}
@@ -286,6 +294,42 @@ func (r *ChatRepository) RemoveMember(
 	return nil
 }
 
+type chatSummaryColumns struct {
+	peerID             *string
+	peerUsername       *string
+	lastID             *int64
+	lastSenderID       *string
+	lastSenderUsername *string
+	lastContent        *string
+	lastDeleted        *bool
+	lastCreatedAt      *time.Time
+}
+
+func (c *chatSummaryColumns) targets() []any {
+	return []any{&c.peerID, &c.peerUsername, &c.lastID, &c.lastSenderID, &c.lastSenderUsername, &c.lastContent, &c.lastDeleted, &c.lastCreatedAt}
+}
+
+func (c *chatSummaryColumns) apply(chat *model.Chat) {
+	if c.peerID != nil && c.peerUsername != nil {
+		chat.Peer = &model.UserSummary{ID: *c.peerID, Username: *c.peerUsername}
+	}
+	if c.lastID == nil || c.lastSenderID == nil || c.lastSenderUsername == nil || c.lastContent == nil || c.lastDeleted == nil || c.lastCreatedAt == nil {
+		return
+	}
+	chat.LastMessage = &model.ChatLastMessage{
+		ID:             *c.lastID,
+		SenderID:       *c.lastSenderID,
+		SenderUsername: *c.lastSenderUsername,
+		Content:        *c.lastContent,
+		Deleted:        *c.lastDeleted,
+		CreatedAt:      *c.lastCreatedAt,
+	}
+}
+
+func chatSummaryJoins(userParam string) string {
+	return strings.ReplaceAll(chatSummaryJoinsTemplate, "{user}", userParam)
+}
+
 func normalizeUserPair(a, b string) (string, string) {
 	if a < b {
 		return a, b
@@ -307,21 +351,35 @@ var (
 	getChatByIDQuery             = "SELECT id, type, title, created_by, created_at FROM chats WHERE id = $1"
 	insertDirectChatQuery        = "INSERT INTO direct_chats (chat_id, user1_id, user2_id) VALUES ($1, $2, $3)"
 	getChatIDFromDirectChat      = "SELECT chat_id FROM direct_chats WHERE user1_id = $1 AND user2_id = $2"
-	getByIDForUserQuery          = `
- SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.muted, cm.mute_version
- FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
+	chatSummarySelect            = `
+        peer.id, peer.username,
+        lm.id, lm.sender_id, lm_sender.username, lm.content, lm.deleted_at IS NOT NULL, lm.created_at`
+	getByIDForUserQuery = `
+ SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.muted, cm.mute_version,` + chatSummarySelect + `
+ FROM chats c JOIN chat_members cm ON cm.chat_id = c.id` + chatSummaryJoins("$2") + `
  WHERE c.id = $1 AND cm.user_id = $2`
 	getChatsByUserIDQuery = `
  SELECT c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id,
-        count(m.id) AS unread_count, cm.muted, cm.mute_version
- FROM chats c JOIN chat_members cm ON cm.chat_id = c.id
- LEFT JOIN messages m ON m.chat_id = c.id
-      AND m.deleted_at IS NULL
-      AND m.sender_id <> $1
-      AND (cm.last_read_message_id IS NULL OR m.id > cm.last_read_message_id)
+        (SELECT count(*) FROM messages m
+         WHERE m.chat_id = c.id
+           AND m.deleted_at IS NULL
+           AND m.sender_id <> $1
+           AND (cm.last_read_message_id IS NULL OR m.id > cm.last_read_message_id)) AS unread_count,
+        cm.muted, cm.mute_version,` + chatSummarySelect + `
+ FROM chats c JOIN chat_members cm ON cm.chat_id = c.id` + chatSummaryJoins("$1") + `
  WHERE cm.user_id = $1
- GROUP BY c.id, c.type, c.title, c.created_by, c.created_at, cm.last_read_message_id, cm.muted, cm.mute_version
- ORDER BY c.created_at DESC`
+ ORDER BY COALESCE(lm.created_at, c.created_at) DESC, c.id`
+	chatSummaryJoinsTemplate = `
+ LEFT JOIN direct_chats dc ON dc.chat_id = c.id
+ LEFT JOIN users peer ON peer.id = CASE WHEN dc.user1_id = {user} THEN dc.user2_id ELSE dc.user1_id END
+ LEFT JOIN LATERAL (
+     SELECT m.id, m.sender_id, m.content, m.deleted_at, m.created_at
+     FROM messages m
+     WHERE m.chat_id = c.id
+     ORDER BY m.id DESC
+     LIMIT 1
+ ) lm ON true
+ LEFT JOIN users lm_sender ON lm_sender.id = lm.sender_id`
 	getChatMemberQuery = `
 		SELECT chat_id, user_id, role, joined_at, last_read_message_id FROM chat_members WHERE chat_id = $1 AND user_id = $2
 	`

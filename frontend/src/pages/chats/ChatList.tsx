@@ -1,10 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { chatsQuery } from "../../api/queries";
+import { useAuth } from "../../auth/useAuth";
+import { Button } from "../../components/Button";
 import { ErrorState } from "../../components/ErrorState";
+import { Icon } from "../../components/Icon";
 import { StatePanel } from "../../components/StatePanel";
 import { chatTitle } from "../../lib/chat";
 import { ChatRow } from "./ChatRow";
+import type { NewChatMode } from "./new/NewChatDialog";
 
 function EmptyIllustration() {
   return (
@@ -37,8 +41,14 @@ function SkeletonRows() {
   ));
 }
 
-export function ChatList({ filter }: { filter: string }) {
+interface ChatListProps {
+  filter: string;
+  onNewChat: (mode: NewChatMode) => void;
+}
+
+export function ChatList({ filter, onNewChat }: ChatListProps) {
   const query = useQuery(chatsQuery);
+  const { user } = useAuth();
   const needle = filter.trim().toLowerCase();
 
   let content;
@@ -59,7 +69,25 @@ export function ChatList({ filter }: { filter: string }) {
         visual={<EmptyIllustration />}
         title="No chats yet"
         description="Conversations you start, or are invited to, will show up here."
-      />
+      >
+        <Button
+          icon={<Icon name="compose" size={18} />}
+          onClick={() => {
+            onNewChat("direct");
+          }}
+        >
+          New chat
+        </Button>
+        <Button
+          variant="secondary"
+          icon={<Icon name="group" size={18} />}
+          onClick={() => {
+            onNewChat("group");
+          }}
+        >
+          Create group
+        </Button>
+      </StatePanel>
     );
   } else {
     const chats = needle
@@ -71,7 +99,7 @@ export function ChatList({ filter }: { filter: string }) {
           No chats match “{filter.trim()}”.
         </p>
       ) : (
-        chats.map((chat) => <ChatRow key={chat.id} chat={chat} />)
+        chats.map((chat) => <ChatRow key={chat.id} chat={chat} currentUserId={user?.id} />)
       );
   }
 

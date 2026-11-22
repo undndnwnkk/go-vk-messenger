@@ -17,7 +17,14 @@ type UserRepositoryInterface interface {
 	Create(ctx context.Context, user model.User) (string, error)
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
+	Search(ctx context.Context, excludeID, prefix string, limit int) ([]model.UserSummary, error)
+	ListContacts(ctx context.Context, userID string, limit int) ([]model.UserSummary, error)
 }
+
+const (
+	DefaultUserSearchLimit = 20
+	maxUserSearchLimit     = 50
+)
 
 type UserService struct {
 	repo       UserRepositoryInterface
@@ -98,6 +105,19 @@ func (s *UserService) GetUserByID(ctx context.Context, id string) (*model.User, 
 		return nil, ErrNilUser
 	}
 	return user, nil
+}
+
+func (s *UserService) SearchUsers(ctx context.Context, currentUserID, query string, limit int) ([]model.UserSummary, error) {
+	if limit < 1 {
+		return nil, ErrInvalidLimit
+	}
+	limit = min(limit, maxUserSearchLimit)
+
+	prefix := normalizeUsername(strings.TrimPrefix(strings.TrimSpace(query), "@"))
+	if prefix == "" {
+		return s.repo.ListContacts(ctx, currentUserID, limit)
+	}
+	return s.repo.Search(ctx, currentUserID, prefix, limit)
 }
 
 func hashPassword(password string) (string, error) {

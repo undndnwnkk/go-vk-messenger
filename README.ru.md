@@ -514,6 +514,55 @@ Authorization: Bearer <JWT>
 }
 ```
 
+### List chats
+
+```http
+GET /api/v1/chats
+Authorization: Bearer <JWT>
+```
+
+```json
+[
+  {
+    "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "type": "direct",
+    "title": null,
+    "created_by": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "created_at": "2026-09-24T10:00:00Z",
+    "last_read_message_id": 123,
+    "unread_count": 2,
+    "muted": false,
+    "mute_version": 0,
+    "peer": { "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "username": "bob" },
+    "last_message": {
+      "id": 125,
+      "sender_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "sender_username": "bob",
+      "content": "See you tomorrow",
+      "deleted": false,
+      "created_at": "2026-09-24T10:05:00Z"
+    }
+  }
+]
+```
+
+Чаты отсортированы по последней активности (время последнего сообщения, а для чатов без сообщений — время создания), новые сверху. `peer` — собеседник в личном чате, у групп поля нет. `last_message` — последнее сообщение, включая удалённые (`deleted: true`, пустой `content`); поля нет, если сообщений ещё не было. `GET /api/v1/chats/{chatID}` возвращает те же `peer` и `last_message`.
+
+### Search users
+
+```http
+GET /api/v1/users/search?q=al&limit=20
+Authorization: Bearer <JWT>
+```
+
+```json
+[
+  { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "username": "alice" }
+]
+```
+
+`q` — префикс username (обрезаются пробелы и ведущий `@`, приводится к нижнему регистру; `%` и `_` ищутся буквально). Без `q` возвращаются контакты: пользователи, с которыми есть хотя бы один общий чат. Сам пользователь в выдачу не попадает. `limit` по умолчанию 20, максимум 50; `limit < 1` даёт `400 invalid_limit`.
+
 ### Direct chat
 
 ```json

@@ -2,9 +2,12 @@ package restapi
 
 import (
 	"encoding/json"
-	"github.com/undndnwnkk/go-vk-messenger/internal/model"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/undndnwnkk/go-vk-messenger/internal/model"
+	"github.com/undndnwnkk/go-vk-messenger/internal/service"
 )
 
 func (h *Handler) registerHandler(w http.ResponseWriter, r *http.Request) {
@@ -62,4 +65,31 @@ func (h *Handler) meHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) searchUsersHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusInternalServerError, "id_not_found", "user id not found from context")
+		return
+	}
+
+	params := r.URL.Query()
+	limit := service.DefaultUserSearchLimit
+	if params.Has("limit") {
+		n, err := strconv.Atoi(params.Get("limit"))
+		if err != nil {
+			WriteServiceError(w, service.ErrInvalidLimit)
+			return
+		}
+		limit = n
+	}
+
+	users, err := h.user.SearchUsers(r.Context(), userID, params.Get("q"), limit)
+	if err != nil {
+		WriteServiceError(w, err)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, users)
 }
