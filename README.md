@@ -156,6 +156,10 @@ backend/                     Go module (go.mod, Dockerfile, .env)
   migrations/                goose SQL migrations
   tests/infrastructure/      opt-in smoke test against two running replicas
   scripts/                   rate limit burst script
+frontend/                    React + TypeScript web client (Vite, Tailwind, TanStack Query)
+  src/api/                   typed client generated from backend/api/openapi.yaml
+  src/auth/                  AuthProvider, token storage, route guards
+  src/pages/                 /login, /register, /chats, /chats/:id
 deploy/                      Kubernetes manifests and monitoring provisioning
 docker-compose.yml           local stack; builds images from ./backend
 .github/workflows/           CI workflow
@@ -276,6 +280,19 @@ Local API URL:
 ```text
 http://localhost:8080
 ```
+
+## Run the frontend
+
+Requires Node.js 22+. The backend must allow the dev origin: `CORS_ALLOWED_ORIGINS=http://localhost:5173` (already in `backend/.env.example`).
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local   # VITE_API_URL, default http://localhost:8080
+npm run dev                  # http://localhost:5173
+```
+
+Scripts: `npm run build`, `npm test` (Vitest + Testing Library + MSW), `npm run lint` (ESLint + Prettier check), `npm run typecheck`, `npm run format`. Every script regenerates `src/api/schema.gen.ts` from `backend/api/openapi.yaml` first; the file is not committed. Design tokens come from `docs/design/handoff/tokens.css`. Decisions: [ADR 0003](docs/adr/0003-frontend-design-tokens.md), [ADR 0004](docs/adr/0004-frontend-generated-api-client.md), [ADR 0005](docs/adr/0005-frontend-access-token-handling.md).
 
 ## Migrations
 

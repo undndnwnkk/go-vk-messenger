@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State · empty list · Light</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+:root {
+--font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+--font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+--fs-xs: 12px;  --lh-xs: 16px;
+--fs-sm: 13px;  --lh-sm: 18px;
+--fs-base: 14px; --lh-base: 20px;
+--fs-md: 15px;  --lh-md: 22px;
+--fs-lg: 17px;  --lh-lg: 24px;
+--fs-xl: 20px;  --lh-xl: 28px;
+--fs-2xl: 28px; --lh-2xl: 34px;
+--fs-3xl: 40px; --lh-3xl: 44px;
+--fw-regular: 400; --fw-medium: 500; --fw-semibold: 600;
+--sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+--sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+--sp-12: 48px; --sp-16: 64px;
+--r-xs: 4px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
+--touch: 44px;
+--header-h: 64px; --header-h-mobile: 56px;
+--row-h: 72px;
+--list-w: 340px; --panel-w: 360px; --content-max: 760px;
+--avatar-xs: 24px; --avatar-sm: 32px; --avatar-md: 40px; --avatar-lg: 48px; --avatar-xl: 96px;
+--icon: 20px;
+}
+.pl-light {
+color-scheme: light;
+--bg-app: #F3F2EF;
+--surface: #FFFFFF;
+--surface-2: #F8F7F4;
+--sunken: #ECEAE6;
+--chat-bg: #F5F4F1;
+--overlay: rgba(18, 20, 22, .48);
+--skeleton: #E8E5DF;
+--row-hover: #F5F4F1;
+--row-active: #E5EDF1;
+--border: #E2DFD8;
+--border-input: #96928A;
+--text: #1A1C1F;
+--text-2: #444A52;
+--text-3: #5F6570;
+--accent: #1F5F7A;
+--accent-hover: #174C62;
+--accent-fg: #FFFFFF;
+--accent-soft: #DCEBF1;
+--on-accent-soft: #10303E;
+--focus-ring: rgba(31, 95, 122, .22);
+--bubble-in: #FFFFFF;
+--bubble-in-border: #E2DFD8;
+--bubble-out: #DCEBF1;
+--bubble-out-text: #10303E;
+--bubble-out-meta: #3A6073;
+--quote-in: #F1EFEB;
+--quote-out: #CBE0E9;
+--badge-bg: #1F5F7A;
+--badge-fg: #FFFFFF;
+--badge-muted-bg: #5F6570;
+--badge-muted-fg: #FFFFFF;
+--danger: #B3362B;
+--danger-soft: #FBE8E5;
+--warn-soft: #F9EBC8;
+--warn-text: #5E3F00;
+--warn-border: #E8CF8E;
+--hl: #FCE08A;
+--on-hl: #3A2A00;
+--hl-current: #F5B93B;
+--on-hl-current: #2B1D00;
+--shadow-1: 0 1px 2px rgba(26, 28, 31, .06), 0 1px 3px rgba(26, 28, 31, .06);
+--shadow-pop: 0 12px 32px rgba(26, 28, 31, .14), 0 2px 6px rgba(26, 28, 31, .08);
+--av1-bg: #CFE3EA; --av1-fg: #0E3B4D;
+--av2-bg: #EADBC4; --av2-fg: #4A3208;
+--av3-bg: #D9E6C9; --av3-fg: #27410F;
+--av4-bg: #E8D3E2; --av4-fg: #471F41;
+--av5-bg: #D6D9F0; --av5-fg: #23275A;
+--av6-bg: #F0D5CE; --av6-fg: #5A2218;
+}
+.pl-dark {
+color-scheme: dark;
+--bg-app: #0F1113;
+--surface: #171A1D;
+--surface-2: #1E2226;
+--sunken: #23282D;
+--chat-bg: #121416;
+--overlay: rgba(0, 0, 0, .6);
+--skeleton: #262B31;
+--row-hover: #1B1F23;
+--row-active: #1C2A31;
+--border: #272B31;
+--border-input: #6C7480;
+--text: #ECEDEF;
+--text-2: #B7BCC4;
+--text-3: #949AA4;
+--accent: #6DB5D1;
+--accent-hover: #8AC6DD;
+--accent-fg: #08222D;
+--accent-soft: #1D3A47;
+--on-accent-soft: #D5E9F1;
+--focus-ring: rgba(109, 181, 209, .28);
+--bubble-in: #22262B;
+--bubble-in-border: #2C3138;
+--bubble-out: #1F4658;
+--bubble-out-text: #E6F1F5;
+--bubble-out-meta: #A9C9D6;
+--quote-in: #1B1F23;
+--quote-out: #1A3B49;
+--badge-bg: #6DB5D1;
+--badge-fg: #08222D;
+--badge-muted-bg: #3B414A;
+--badge-muted-fg: #D3D7DD;
+--danger: #F28B80;
+--danger-soft: #3A201D;
+--warn-soft: #3A2E12;
+--warn-text: #F2D48C;
+--warn-border: #5E4A1B;
+--hl: #6B5612;
+--on-hl: #FFEFB8;
+--hl-current: #E2B13C;
+--on-hl-current: #1E1500;
+--shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+--shadow-pop: 0 16px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04);
+--av1-bg: #214556; --av1-fg: #BFE3F2;
+--av2-bg: #4A3A1C; --av2-fg: #EAD5AA;
+--av3-bg: #2F4120; --av3-fg: #CCE5B3;
+--av4-bg: #47283F; --av4-fg: #EBC9E2;
+--av5-bg: #2D3158; --av5-fg: #CBCFF5;
+--av6-bg: #512A22; --av6-fg: #F2CABF;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0}
+.pl-root{font-family:var(--font-ui);font-size:var(--fs-base);line-height:var(--lh-base);color:var(--text);-webkit-font-smoothing:antialiased}
+.pl-root button{appearance:none;-webkit-appearance:none;border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:inherit}
+.pl-root input{font:inherit;color:inherit;margin:0}
+.pl-root input::placeholder{color:var(--text-3);opacity:1}
+.pl-root :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pl-root input:focus-visible{outline:none}
+.pl-field:focus-within{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--focus-ring)}
+.pl-spin{animation:pl-spin 1s linear infinite}
+@keyframes pl-spin{to{transform:rotate(360deg)}}
+.pl-pulse{animation:pl-pulse 1.6s ease-in-out infinite}
+@keyframes pl-pulse{50%{opacity:.55}}
+.pl-scroll{overflow:auto;scrollbar-width:thin}
+@media (max-width:760px){.pl-list{width:100% !important;border-right:0 !important}.pl-detail,.pl-panel,.pl-deco{display:none !important}}
+</style>
+
+</head>
+<body>
+
+<div class="pl-root pl-light" style="position:relative;width:100%;height:100vh;display:flex;flex-direction:column;background:var(--bg-app);overflow:hidden"><div style="flex:1;min-height:0;display:flex"><aside class="pl-list" style="width:340px;flex:none;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--border)"><header style="height:64px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px 0 20px"><div style="display:flex;align-items:center;gap:10px"><svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" style="flex:none;display:block"><path d="M16 3C8.8 3 3 8.3 3 15c0 3.2 1.4 6.1 3.7 8.2L5.5 28.5l5.4-2.4c1.6.5 3.3.8 5.1.8 7.2 0 13-5.3 13-12S23.2 3 16 3z" fill="var(--accent)"></path><circle cx="16" cy="15" r="3.4" fill="var(--accent-fg)"></circle></svg><span style="font-family:var(--font-display);font-weight:600;font-size:22px;line-height:1;letter-spacing:-.02em;color:var(--text)">plover</span></div><span style="flex:1"></span><button type="button" aria-label="New chat" style="width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:12px;background:transparent;color:var(--text-2);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><path d="M11 4H7a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3v-4"></path><path d="M17.2 3.8a1.9 1.9 0 012.7 2.7L12 14.4 8.5 15.5l1.1-3.5 7.6-8.2z"></path></svg></button></header><div style="flex:none;padding:0 16px 8px"><div class="pl-field" style="height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:12px;background:var(--sunken);border:1px solid transparent"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block;color:var(--text-3)"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg><input type="text" aria-label="Search chats" placeholder="Search chats" value="" style="flex:1;min-width:0;height:40px;border:0;background:transparent;outline:none;font-size:15px"></div></div><nav aria-label="Chats" class="pl-scroll" style="flex:1;min-height:0;display:flex;flex-direction:column"><div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:24px 32px"><svg width="120" height="96" viewBox="0 0 120 96" aria-hidden="true" style="display:block;flex:none"><rect x="8" y="8" width="72" height="46" rx="16" fill="var(--sunken)"></rect><path d="M22 52L18 66L34 54Z" fill="var(--sunken)"></path><rect x="40" y="34" width="72" height="46" rx="16" fill="var(--accent-soft)"></rect><path d="M98 78L104 90L88 80Z" fill="var(--accent-soft)"></path><rect x="54" y="49" width="42" height="6" rx="3" fill="var(--accent)" opacity=".6"></rect><rect x="54" y="61" width="26" height="6" rx="3" fill="var(--accent)" opacity=".35"></rect></svg><h3 style="margin:12px 0 0;font-family:var(--font-display);font-size:18px;line-height:26px;font-weight:600">No chats yet</h3><p style="margin:0;max-width:260px;font-size:14px;line-height:20px;color:var(--text-2);text-wrap:pretty">Conversations you start, or are invited to, will show up here.</p><div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;width:100%;max-width:220px"><button type="button" style="height:44px;padding:0 18px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;width:100%;background:var(--accent);color:var(--accent-fg);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><path d="M11 4H7a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3v-4"></path><path d="M17.2 3.8a1.9 1.9 0 012.7 2.7L12 14.4 8.5 15.5l1.1-3.5 7.6-8.2z"></path></svg>New chat</button><button type="button" style="height:44px;padding:0 18px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border-input);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><circle cx="9" cy="9" r="3.3"></circle><path d="M3 19.5c.6-3 3-4.8 6-4.8s5.4 1.8 6 4.8"></path><circle cx="17" cy="9.5" r="2.6"></circle><path d="M16.5 14.8c2.4.2 4.1 1.7 4.5 4"></path></svg>Create group</button></div></div></nav><footer style="flex:none;display:flex;align-items:center;gap:12px;padding:10px 8px 10px 16px;border-top:1px solid var(--border)"><div aria-hidden="true" style="width:40px;height:40px;flex:none;border-radius:50%;background:var(--av1-bg);color:var(--av1-fg);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;font-size:14px;letter-spacing:.02em">SR</div><div style="flex:1;min-width:0"><div style="font-size:14px;line-height:20px;font-weight:600">Sam Rivera</div><div style="font-size:12px;line-height:16px;color:var(--text-3)">@sam</div></div><button type="button" aria-label="Switch to dark theme" style="width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:12px;background:transparent;color:var(--text-2);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"></path></svg></button><button type="button" aria-label="Sign out" style="width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:12px;background:transparent;color:var(--text-2);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><path d="M10 5H6.5A2.5 2.5 0 004 7.5v9A2.5 2.5 0 006.5 19H10"></path><path d="M15 8l4 4-4 4M19 12H9.5"></path></svg></button></footer></aside><main class="pl-detail" style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--chat-bg)"><div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:24px 32px"><svg width="48" height="48" viewBox="0 0 32 32" aria-hidden="true" style="flex:none;display:block"><path d="M16 3C8.8 3 3 8.3 3 15c0 3.2 1.4 6.1 3.7 8.2L5.5 28.5l5.4-2.4c1.6.5 3.3.8 5.1.8 7.2 0 13-5.3 13-12S23.2 3 16 3z" fill="var(--accent)"></path><circle cx="16" cy="15" r="3.4" fill="var(--accent-fg)"></circle></svg><h3 style="margin:12px 0 0;font-family:var(--font-display);font-size:18px;line-height:26px;font-weight:600">Select a conversation</h3><p style="margin:0;max-width:260px;font-size:14px;line-height:20px;color:var(--text-2);text-wrap:pretty">Choose a chat from the list, or start a new one.</p><div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;width:100%;max-width:220px"></div></div></main></div></div>
+
+</body>
+</html>

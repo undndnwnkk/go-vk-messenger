@@ -1,0 +1,159 @@
+/* Plover — design tokens
+   Usage: put class "pl-light" or "pl-dark" on a root element; everything else is var(--token). */
+
+:root {
+  /* Font families */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale: size / line-height */
+  --fs-xs: 12px;  --lh-xs: 16px;   /* timestamps, badges, captions */
+  --fs-sm: 13px;  --lh-sm: 18px;   /* labels, secondary text */
+  --fs-base: 14px; --lh-base: 20px; /* UI default, list preview */
+  --fs-md: 15px;  --lh-md: 22px;   /* message text, inputs, buttons */
+  --fs-lg: 17px;  --lh-lg: 24px;   /* chat title (mobile header) */
+  --fs-xl: 20px;  --lh-xl: 28px;   /* dialog title */
+  --fs-2xl: 28px; --lh-2xl: 34px;  /* auth heading */
+  --fs-3xl: 40px; --lh-3xl: 44px;  /* display */
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600;
+
+  /* Spacing (4px base) */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px;
+
+  /* Radii */
+  --r-xs: 4px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
+
+  /* Component sizes */
+  --touch: 44px;
+  --header-h: 64px; --header-h-mobile: 56px;
+  --row-h: 72px;
+  --list-w: 340px; --panel-w: 360px; --content-max: 760px;
+  --avatar-xs: 24px; --avatar-sm: 32px; --avatar-md: 40px; --avatar-lg: 48px; --avatar-xl: 96px;
+  --icon: 20px;
+}
+
+.pl-light {
+  color-scheme: light;
+  /* Surfaces */
+  --bg-app: #F3F2EF;
+  --surface: #FFFFFF;
+  --surface-2: #F8F7F4;
+  --sunken: #ECEAE6;
+  --chat-bg: #F5F4F1;
+  --overlay: rgba(18, 20, 22, .48);
+  --skeleton: #E8E5DF;
+  --row-hover: #F5F4F1;
+  --row-active: #E5EDF1;
+  /* Lines */
+  --border: #E2DFD8;
+  --border-input: #96928A;
+  /* Text */
+  --text: #1A1C1F;
+  --text-2: #444A52;
+  --text-3: #5F6570;
+  /* Accent (petrol) */
+  --accent: #1F5F7A;
+  --accent-hover: #174C62;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #DCEBF1;
+  --on-accent-soft: #10303E;
+  --focus-ring: rgba(31, 95, 122, .22);
+  /* Message bubbles */
+  --bubble-in: #FFFFFF;
+  --bubble-in-border: #E2DFD8;
+  --bubble-out: #DCEBF1;
+  --bubble-out-text: #10303E;
+  --bubble-out-meta: #3A6073;
+  --quote-in: #F1EFEB;
+  --quote-out: #CBE0E9;
+  /* Badges */
+  --badge-bg: #1F5F7A;
+  --badge-fg: #FFFFFF;
+  --badge-muted-bg: #5F6570;
+  --badge-muted-fg: #FFFFFF;
+  /* Feedback */
+  --danger: #B3362B;
+  --danger-soft: #FBE8E5;
+  --warn-soft: #F9EBC8;
+  --warn-text: #5E3F00;
+  --warn-border: #E8CF8E;
+  /* Search highlight */
+  --hl: #FCE08A;
+  --on-hl: #3A2A00;
+  --hl-current: #F5B93B;
+  --on-hl-current: #2B1D00;
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgba(26, 28, 31, .06), 0 1px 3px rgba(26, 28, 31, .06);
+  --shadow-pop: 0 12px 32px rgba(26, 28, 31, .14), 0 2px 6px rgba(26, 28, 31, .08);
+  /* Avatar pairs (background / initials) */
+  --av1-bg: #CFE3EA; --av1-fg: #0E3B4D;
+  --av2-bg: #EADBC4; --av2-fg: #4A3208;
+  --av3-bg: #D9E6C9; --av3-fg: #27410F;
+  --av4-bg: #E8D3E2; --av4-fg: #471F41;
+  --av5-bg: #D6D9F0; --av5-fg: #23275A;
+  --av6-bg: #F0D5CE; --av6-fg: #5A2218;
+}
+
+.pl-dark {
+  color-scheme: dark;
+  --bg-app: #0F1113;
+  --surface: #171A1D;
+  --surface-2: #1E2226;
+  --sunken: #23282D;
+  --chat-bg: #121416;
+  --overlay: rgba(0, 0, 0, .6);
+  --skeleton: #262B31;
+  --row-hover: #1B1F23;
+  --row-active: #1C2A31;
+
+  --border: #272B31;
+  --border-input: #6C7480;
+
+  --text: #ECEDEF;
+  --text-2: #B7BCC4;
+  --text-3: #949AA4;
+
+  --accent: #6DB5D1;
+  --accent-hover: #8AC6DD;
+  --accent-fg: #08222D;
+  --accent-soft: #1D3A47;
+  --on-accent-soft: #D5E9F1;
+  --focus-ring: rgba(109, 181, 209, .28);
+
+  --bubble-in: #22262B;
+  --bubble-in-border: #2C3138;
+  --bubble-out: #1F4658;
+  --bubble-out-text: #E6F1F5;
+  --bubble-out-meta: #A9C9D6;
+  --quote-in: #1B1F23;
+  --quote-out: #1A3B49;
+
+  --badge-bg: #6DB5D1;
+  --badge-fg: #08222D;
+  --badge-muted-bg: #3B414A;
+  --badge-muted-fg: #D3D7DD;
+
+  --danger: #F28B80;
+  --danger-soft: #3A201D;
+  --warn-soft: #3A2E12;
+  --warn-text: #F2D48C;
+  --warn-border: #5E4A1B;
+
+  --hl: #6B5612;
+  --on-hl: #FFEFB8;
+  --hl-current: #E2B13C;
+  --on-hl-current: #1E1500;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04);
+
+  --av1-bg: #214556; --av1-fg: #BFE3F2;
+  --av2-bg: #4A3A1C; --av2-fg: #EAD5AA;
+  --av3-bg: #2F4120; --av3-fg: #CCE5B3;
+  --av4-bg: #47283F; --av4-fg: #EBC9E2;
+  --av5-bg: #2D3158; --av5-fg: #CBCFF5;
+  --av6-bg: #512A22; --av6-fg: #F2CABF;
+}
