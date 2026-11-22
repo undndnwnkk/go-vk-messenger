@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,8 @@ type fakeUserRepository struct {
 	usersByID       map[string]model.User
 	usersByUsername map[string]model.User
 	nextID          int
+	searchCalls     []userSearchCall
+	contactCalls    []userSearchCall
 }
 
 func newFakeUserRepository() *fakeUserRepository {
@@ -150,4 +154,27 @@ func TestUserServiceLoginInvalidCredentials(t *testing.T) {
 	if _, err := svc.Login(context.Background(), model.CreateUserRequest{Username: "missing", Password: "verysecret"}); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong username error = %v, want %v", err, ErrInvalidCredentials)
 	}
+}
+
+func (r *fakeUserRepository) Search(_ context.Context, excludeID, prefix string, limit int) ([]model.UserSummary, error) {
+	r.searchCalls = append(r.searchCalls, userSearchCall{userID: excludeID, prefix: prefix, limit: limit})
+	users := make([]model.UserSummary, 0)
+	for _, user := range r.usersByID {
+		if user.ID != excludeID && strings.HasPrefix(user.Username, prefix) {
+			users = append(users, model.UserSummary{ID: user.ID, Username: user.Username})
+		}
+	}
+	slices.SortFunc(users, func(a, b model.UserSummary) int { return strings.Compare(a.Username, b.Username) })
+	return users[:min(limit, len(users))], nil
+}
+
+func (r *fakeUserRepository) ListContacts(_ context.Context, userID string, limit int) ([]model.UserSummary, error) {
+	r.contactCalls = append(r.contactCalls, userSearchCall{userID: userID, limit: limit})
+	return []model.UserSummary{}, nil
+}
+
+type userSearchCall struct {
+	userID string
+	prefix string
+	limit  int
 }

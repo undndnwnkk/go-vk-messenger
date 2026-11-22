@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,6 +24,8 @@ type fakeUserRepo struct {
 	usersByID       map[string]model.User
 	usersByUsername map[string]model.User
 	nextID          int
+	searchCalls     []userSearchCall
+	contactCalls    []userSearchCall
 }
 
 type fakeHealthChecker struct {
@@ -259,4 +262,27 @@ func TestMeHandlerAndJWTMiddleware(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("me with tampered token status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+}
+
+func (r *fakeUserRepo) Search(_ context.Context, excludeID, prefix string, limit int) ([]model.UserSummary, error) {
+	r.searchCalls = append(r.searchCalls, userSearchCall{userID: excludeID, prefix: prefix, limit: limit})
+	users := make([]model.UserSummary, 0)
+	for _, user := range r.usersByID {
+		if user.ID != excludeID && strings.HasPrefix(user.Username, prefix) {
+			users = append(users, model.UserSummary{ID: user.ID, Username: user.Username})
+		}
+	}
+	slices.SortFunc(users, func(a, b model.UserSummary) int { return strings.Compare(a.Username, b.Username) })
+	return users[:min(limit, len(users))], nil
+}
+
+func (r *fakeUserRepo) ListContacts(_ context.Context, userID string, limit int) ([]model.UserSummary, error) {
+	r.contactCalls = append(r.contactCalls, userSearchCall{userID: userID, limit: limit})
+	return []model.UserSummary{}, nil
+}
+
+type userSearchCall struct {
+	userID string
+	prefix string
+	limit  int
 }

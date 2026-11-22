@@ -15,15 +15,26 @@ const (
 )
 
 type Chat struct {
-	ID                string    `db:"id" json:"id"`
-	Type              ChatType  `db:"type" json:"type"`
-	Title             *string   `db:"title" json:"title"`
-	CreatedBy         string    `db:"created_by" json:"created_by"`
-	CreatedAt         time.Time `db:"created_at" json:"created_at"`
-	LastReadMessageID *int64    `db:"last_read_message_id" json:"last_read_message_id,omitempty"`
-	UnreadCount       int64     `db:"unread_count" json:"unread_count"`
-	Muted             bool      `db:"muted" json:"muted"`
-	MuteVersion       int64     `db:"mute_version" json:"mute_version"`
+	ID                string           `db:"id" json:"id"`
+	Type              ChatType         `db:"type" json:"type"`
+	Title             *string          `db:"title" json:"title"`
+	CreatedBy         string           `db:"created_by" json:"created_by"`
+	CreatedAt         time.Time        `db:"created_at" json:"created_at"`
+	LastReadMessageID *int64           `db:"last_read_message_id" json:"last_read_message_id,omitempty"`
+	UnreadCount       int64            `db:"unread_count" json:"unread_count"`
+	Muted             bool             `db:"muted" json:"muted"`
+	MuteVersion       int64            `db:"mute_version" json:"mute_version"`
+	Peer              *UserSummary     `json:"peer,omitempty"`
+	LastMessage       *ChatLastMessage `json:"last_message,omitempty"`
+}
+
+type ChatLastMessage struct {
+	ID             int64     `json:"id"`
+	SenderID       string    `json:"sender_id"`
+	SenderUsername string    `json:"sender_username"`
+	Content        string    `json:"content"`
+	Deleted        bool      `json:"deleted"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type ChatMember struct {

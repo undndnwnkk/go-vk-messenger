@@ -57,6 +57,7 @@ func NewHandlerWithOptions(user service.UserService, jwtService *service.JWTServ
 		r.Group(func(r chi.Router) {
 			r.Use(JWTMiddleware(h.jwtService))
 			r.Get("/me", h.meHandler)
+			r.Get("/users/search", h.searchUsersHandler)
 
 			r.Get("/chats", h.getChatsHandler)
 			r.Route("/chats", func(r chi.Router) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -74,6 +76,40 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 	return &user, nil
 }
 
+func (r *UserRepository) Search(ctx context.Context, excludeID, prefix string, limit int) ([]model.UserSummary, error) {
+	return r.listSummaries(ctx, searchUsersQuery, excludeID, likePrefix(prefix), limit)
+}
+
+func (r *UserRepository) ListContacts(ctx context.Context, userID string, limit int) ([]model.UserSummary, error) {
+	return r.listSummaries(ctx, listContactsQuery, userID, limit)
+}
+
+func (r *UserRepository) listSummaries(ctx context.Context, query string, args ...any) ([]model.UserSummary, error) {
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]model.UserSummary, 0)
+	for rows.Next() {
+		var user model.UserSummary
+		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	return users, nil
+}
+
+func likePrefix(value string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(value)
+	return escaped + "%"
+}
+
 func mapPostgresError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
@@ -88,6 +124,24 @@ func mapPostgresError(err error) error {
 
 	return nil
 }
+
+const (
+	searchUsersQuery = `
+ SELECT id, username FROM users
+ WHERE id <> $1 AND username LIKE $2 ESCAPE '\'
+ ORDER BY username
+ LIMIT $3`
+	listContactsQuery = `
+ SELECT u.id, u.username FROM users u
+ WHERE u.id <> $1
+   AND EXISTS (
+       SELECT 1 FROM chat_members me
+       JOIN chat_members other ON other.chat_id = me.chat_id
+       WHERE me.user_id = $1 AND other.user_id = u.id
+   )
+ ORDER BY u.username
+ LIMIT $2`
+)
 
 var (
 	ErrUsernameTaken = errors.New("username must be unique")
