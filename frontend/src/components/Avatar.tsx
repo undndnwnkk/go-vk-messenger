@@ -8,6 +8,7 @@ const palette = [
 ] as const;
 
 const sizes = {
+  xs: "size-avatar-xs text-[10px]",
   md: "size-avatar-md text-[14px]",
   lg: "size-avatar-lg text-[16px]",
 } as const;
