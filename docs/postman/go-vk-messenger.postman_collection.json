@@ -548,7 +548,56 @@
           "script": {
             "exec": [
               "pm.test('get chats ok', function () { pm.response.to.have.status(200); });",
-              "pm.test('response is array', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+              "pm.test('response is array', function () { pm.expect(pm.response.json()).to.be.an('array'); });",
+              "pm.test('direct chat has peer and chats are ordered by activity', function () { const chats = pm.response.json(); const direct = chats.find(c => c.id === pm.collectionVariables.get('chat_id')); pm.expect(direct.peer.id).to.eql(pm.collectionVariables.get('bob_id')); const times = chats.map(c => new Date(c.last_message ? c.last_message.created_at : c.created_at).getTime()); pm.expect(times).to.eql([...times].sort((a, b) => b - a)); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search Users",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/users/search?q={{bob_username}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('search users ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('finds bob and never returns the caller', function () { const users = pm.response.json(); pm.expect(users.map(u => u.id)).to.include(pm.collectionVariables.get('bob_id')); pm.expect(users.map(u => u.id)).to.not.include(pm.collectionVariables.get('alice_id')); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Contacts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{alice_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/users/search"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('list contacts ok', function () { pm.response.to.have.status(200); });",
+              "pm.test('contacts include chat partners', function () { const ids = pm.response.json().map(u => u.id); pm.expect(ids).to.include(pm.collectionVariables.get('bob_id')); pm.expect(ids).to.include(pm.collectionVariables.get('carol_id')); });"
             ]
           }
         }

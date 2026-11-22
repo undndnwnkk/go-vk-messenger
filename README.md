@@ -564,6 +564,11 @@ Creating the same direct chat in reverse order returns the existing direct chat.
 
 ### List chats
 
+```http
+GET /api/v1/chats
+Authorization: Bearer <JWT>
+```
+
 ```json
 [
   {
@@ -575,10 +580,36 @@ Creating the same direct chat in reverse order returns the existing direct chat.
     "last_read_message_id": 123,
     "unread_count": 2,
     "muted": false,
-    "mute_version": 0
+    "mute_version": 0,
+    "peer": { "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "username": "bob" },
+    "last_message": {
+      "id": 125,
+      "sender_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "sender_username": "bob",
+      "content": "See you tomorrow",
+      "deleted": false,
+      "created_at": "2026-09-24T10:05:00Z"
+    }
   }
 ]
 ```
+
+Chats are ordered by last activity (latest message time, or creation time for chats without messages), newest first. `peer` is the other user of a direct chat and is absent for groups. `last_message` is the latest message including deleted ones (`deleted: true`, empty `content`) and is absent when the chat has no messages. `GET /api/v1/chats/{chatID}` returns the same `peer` and `last_message`.
+
+### Search users
+
+```http
+GET /api/v1/users/search?q=al&limit=20
+Authorization: Bearer <JWT>
+```
+
+```json
+[
+  { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "username": "alice" }
+]
+```
+
+`q` is a username prefix (trimmed, leading `@` dropped, lower-cased; `%` and `_` match literally). Without `q` the endpoint returns contacts: users who share at least one chat with the caller. The caller is never included. `limit` defaults to 20 and is capped at 50; `limit < 1` returns `400 invalid_limit`.
 
 ### Members
 
